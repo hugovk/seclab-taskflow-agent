@@ -72,7 +72,7 @@ class AvailableTools:
             alias_keys = alias_dict.keys()
             for k,v in original_dict.items():
                 for ak in alias_keys:
-                    if k.startswith(ak) and k[len(ak)] == '/':
+                    if k.startswith(ak) and len(k) > len(ak) and k[len(ak)] == '/':
                         new_key = alias_dict[ak] + k[len(ak):]
                         new_dict[new_key] = v
             return new_dict
@@ -96,7 +96,7 @@ def canonicalize_toolboxes(toolboxes : list, alias_dict : dict) -> list:
     for tb in toolboxes:
         found_alias = False
         for k,v in alias_dict.items():
-            if tb.startswith(v) and tb[len(v)] == '/':
+            if tb.startswith(v) and len(tb) > len(v) and tb[len(v)] == '/':
                 out.add(k + tb[len(v):])
                 found_alias = True
         if not found_alias:
