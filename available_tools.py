@@ -88,7 +88,7 @@ class AvailableTools:
 
 def canonicalize_toolboxes(toolboxes : list, alias_dict : dict) -> list:
     """
-    Toolboxes needs to be canonicalize because both personalities and taskflows can use toolboxes with potentially different aliases
+    Toolboxes need to be canonicalized because both personalities and taskflows can use toolboxes with potentially different aliases
     """
     out = set()
     if not alias_dict:
