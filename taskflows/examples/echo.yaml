@@ -2,14 +2,15 @@ seclab-taskflow-agent:
   version: 1
   filetype: taskflow
   filekey: GitHubSecurityLab/seclab-taskflow-agent/taskflows/examples/echo
-
+namespace_aliases:
+  GitHubSecurityLab/seclab-taskflow-agent : seclab-ta
 taskflow:
   - task:
       model: claude-3.5-sonnet
       max_steps: 5
       must_complete: true
       agents:
-        - GitHubSecurityLab/seclab-taskflow-agent/personalities/examples/echo
+        - seclab-ta/personalities/examples/echo
       user_prompt: |
         Hello
   - task:

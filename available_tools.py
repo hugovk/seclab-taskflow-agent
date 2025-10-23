@@ -26,6 +26,7 @@ class AvailableTools:
         self.prompts = {}
         self.toolboxes = {}
         self.model_config = {}
+        self.namespace_config = {}
 
         # Iterate through all the yaml files and divide them into categories.
         # Each file should contain a header like this:
@@ -52,6 +53,8 @@ class AvailableTools:
                     add_yaml_to_dict(self.toolboxes, filekey, yaml)
                 elif filetype == 'model_config':
                     add_yaml_to_dict(self.model_config, filekey, yaml)
+                elif filetype == 'namespace_config':
+                    add_yaml_to_dict(self.namespace_config, filekey, yaml)
                 else:
                     raise FileTypeException(str(filetype))
             except KeyError as err:
@@ -62,3 +65,40 @@ class AvailableTools:
                 logging.error(f'{path}: file ID {err.args[0]} is not unique')
             except FileTypeException as err:
                 logging.error(f'{path}: seclab-taskflow-agent file type {err.args[0]} is not supported')
+
+    def copy_with_alias(self, alias_dict : dict) -> dict:
+        def _copy_add_alias_to_dict(original_dict : dict, alias_dict : dict) -> dict:
+            new_dict = dict(original_dict)
+            alias_keys = alias_dict.keys()
+            for k,v in original_dict.items():
+                for ak in alias_keys:
+                    if k.startswith(ak) and k[len(ak)] == '/':
+                        new_key = alias_dict[ak] + k[len(ak):]
+                        new_dict[new_key] = v
+            return new_dict
+        new_available_tools = AvailableTools({})
+        new_available_tools.personalities = _copy_add_alias_to_dict(self.personalities, alias_dict)
+        new_available_tools.taskflows = _copy_add_alias_to_dict(self.taskflows, alias_dict)
+        new_available_tools.prompts = _copy_add_alias_to_dict(self.prompts, alias_dict)
+        #toolboxes are looked up after canonicalized
+        new_available_tools.toolboxes = dict(self.toolboxes)
+        new_available_tools.model_config = _copy_add_alias_to_dict(self.model_config, alias_dict)
+        new_available_tools.namespace_config = _copy_add_alias_to_dict(self.namespace_config, alias_dict)
+        return new_available_tools
+
+def canonicalize_toolboxes(toolboxes : list, alias_dict : dict) -> list:
+    """
+    Toolboxes needs to be canonicalize because both personalities and taskflows can use toolboxes with potentially different aliases
+    """
+    out = set()
+    if not alias_dict:
+        return toolboxes
+    for tb in toolboxes:
+        found_alias = False
+        for k,v in alias_dict.items():
+            if tb.startswith(v) and tb[len(v)] == '/':
+                out.add(k + tb[len(v):])
+                found_alias = True
+        if not found_alias:
+            out.add(tb)
+    return list(out)

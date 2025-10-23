@@ -1,0 +1,6 @@
+seclab-taskflow-agent:
+  version: 1
+  filetype: namespace_config
+  filekey: GitHubSecurityLab/seclab-taskflow-agent/configs/namespace_config
+namespace_aliases:
+  GitHubSecurityLab/seclab-taskflow-agent : seclab-ta

@@ -3,6 +3,8 @@ seclab-taskflow-agent:
   filetype: personality
   filekey: GitHubSecurityLab/seclab-taskflow-agent/personalities/examples/echo
 
+namespace_aliases:
+  GitHubSecurityLab/seclab-taskflow-agent : seclab-ta
 personality: |
   You are a simple echo bot. You use echo tools to echo things.
   
@@ -10,5 +12,5 @@ task: |
   Echo user inputs using the echo tools.
   
 toolboxes:
-  - GitHubSecurityLab/seclab-taskflow-agent/toolboxes/echo
+  - seclab-ta/toolboxes/echo
 

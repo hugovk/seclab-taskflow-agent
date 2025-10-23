@@ -3,6 +3,8 @@ seclab-taskflow-agent:
   filetype: taskflow
   filekey: GitHubSecurityLab/seclab-taskflow-agent/taskflows/examples/example
 
+namespace_config: GitHubSecurityLab/seclab-taskflow-agent/configs/namespace_config
+
 taskflow:
   - task:
       # taskflows can optionally choose any of the support CAPI models for a task
@@ -35,7 +37,7 @@ taskflow:
       # this normally only has the memcache toolbox, but we extend it here with
       # the GHSA toolbox
       toolboxes:
-        - GitHubSecurityLab/seclab-taskflow-agent/toolboxes/memcache
+        - seclab-ta/toolboxes/memcache
         - GitHubSecurityLab/seclab-taskflow-agent/toolboxes/codeql
   - task:
       must_complete: true

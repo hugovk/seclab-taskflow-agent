@@ -30,7 +30,7 @@ from env_utils import TmpEnv
 from yaml_parser import YamlParser
 from agent import TaskAgent
 from capi import list_tool_call_models
-from available_tools import AvailableTools
+from available_tools import AvailableTools, canonicalize_toolboxes
 
 load_dotenv()
 
@@ -85,6 +85,15 @@ def parse_prompt_args(available_tools: AvailableTools,
     l = args[0].l
     return p, t, l, ' '.join(args[0].prompt), help_msg
 
+def _get_namespace_aliases(available_tools, yaml_dict : dict) -> dict:
+    namespace_config = yaml_dict.get('namespace_config', '')
+    namespace_aliases = yaml_dict.get('namespace_aliases', {})
+    if namespace_config:
+        namespace_config = available_tools.namespace_config.get(namespace_config, {})
+        namespace_aliases = namespace_aliases | namespace_config.get('namespace_aliases', {})
+    return namespace_aliases
+
+
 async def deploy_task_agents(available_tools: AvailableTools,
                              agents: dict,
                              prompt: str,
@@ -114,7 +123,10 @@ async def deploy_task_agents(available_tools: AvailableTools,
         # otherwise all agents have the disjunction of all their tools available
         for k, v in agents.items():
             if v.get('toolboxes', []):
-                toolboxes += [tb for tb in v['toolboxes'] if tb not in toolboxes]
+                this_toolboxes = [tb for tb in v['toolboxes']]
+                namespace_aliases = _get_namespace_aliases(available_tools, v)
+                this_toolboxes = canonicalize_toolboxes(this_toolboxes, namespace_aliases)
+                toolboxes += [tb for tb in this_toolboxes if tb not in toolboxes]
 
     # https://openai.github.io/openai-agents-python/ref/model_settings/
     parallel_tool_calls = True if os.getenv('MODEL_PARALLEL_TOOL_CALLS') else False
@@ -440,7 +452,9 @@ async def main(available_tools: AvailableTools,
                 if not isinstance(model_dict, dict):
                     raise ValueError(f"Models section of the model_config file {model_config} must be a dictionary")
             model_keys = model_dict.keys() 
-
+        namespace_aliases = _get_namespace_aliases(available_tools, taskflow)
+        this_available_tools = available_tools.copy_with_alias(namespace_aliases)
+        
         for task in taskflow['taskflow']:
 
             task_body = task['task']
@@ -451,7 +465,7 @@ async def main(available_tools: AvailableTools,
             # can tweak reusable task configurations as they see fit
             uses = task_body.get('uses', '')
             if uses:
-                reusable_taskflow = available_tools.taskflows.get(uses)
+                reusable_taskflow = this_available_tools.taskflows.get(uses)
                 if reusable_taskflow is None:
                     raise ValueError(f"No such reusable taskflow: {uses}")
                 if len(reusable_taskflow['taskflow']) > 1:
@@ -475,7 +489,7 @@ async def main(available_tools: AvailableTools,
                 raise ValueError('shell task and prompt task are mutually exclusive!')
             must_complete = task_body.get('must_complete', False)
             max_turns = task_body.get('max_steps', DEFAULT_MAX_TURNS)
-            toolboxes_override = task_body.get('toolboxes', [])
+            toolboxes_override = canonicalize_toolboxes(task_body.get('toolboxes', []), namespace_aliases)
             env = task_body.get('env', {})
             repeat_prompt = task_body.get('repeat_prompt', False)
             # this will set Agent 'stop_on_first_tool' tool use behavior, which prevents output back to llm
@@ -500,7 +514,7 @@ async def main(available_tools: AvailableTools,
 
             # pre-process the prompt for any prompts
             if prompt:
-                prompt = preprocess_prompt(prompt, 'PROMPTS', available_tools.prompts, 'prompt')
+                prompt = preprocess_prompt(prompt, 'PROMPTS', this_available_tools.prompts, 'prompt')
 
             # pre-process the prompt for any inputs
             if prompt and inputs:
@@ -587,10 +601,10 @@ async def main(available_tools: AvailableTools,
                         if not agents:
                             # XXX: deprecate the -p parser for taskflows entirely?
                             # XXX: probably just adds unneeded parsing complexity
-                            p, _, _, prompt, _ = parse_prompt_args(available_tools, prompt)
+                            p, _, _, prompt, _ = parse_prompt_args(this_available_tools, prompt)
                             agents.append(p)
                         for p in agents:
-                            personality = available_tools.personalities.get(p)
+                            personality = this_available_tools.personalities.get(p)
                             if personality is None:
                                 raise ValueError(f"No such personality: {p}")
                             resolved_agents[p] = personality
@@ -599,7 +613,7 @@ async def main(available_tools: AvailableTools,
                         async def _deploy_task_agents(resolved_agents, prompt):
                             async with semaphore:
                                 result = await deploy_task_agents(
-                                    available_tools,
+                                    this_available_tools,
                                     # pass agents and prompt by assignment, they change in-loop
                                     resolved_agents,
                                     prompt,
