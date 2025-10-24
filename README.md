@@ -47,7 +47,7 @@ Example:
 COPILOT_TOKEN=<your_github_token>
 # MCP configs
 GITHUB_PERSONAL_ACCESS_TOKEN=<your_github_token>
-CODEQL_DBS_BASE_PATH="/app/my_data/"
+CODEQL_DBS_BASE_PATH="/app/my_data/codeql_databases"
 ```
 
 ## Deploying from Source
@@ -110,7 +110,7 @@ MY_TASKFLOWS=~/my_taskflows docker/run.sh -t custom_taskflow
 Example: deploying a custom taskflow (custom_taskflow.yaml) and making local CodeQL databases available to the CodeQL MCP server:
 
 ```sh
-MY_TASKFLOWS=~/my_taskflows MY_DATA=~/codeql_databases CODEQL_DBS_BASE_PATH=/app/my_data docker/run.sh -t custom_taskflow
+MY_TASKFLOWS=~/my_taskflows MY_DATA=~/app/my_data CODEQL_DBS_BASE_PATH=/app/my_data/codeql_databases docker/run.sh -t custom_taskflow
 ```
 
 For more advanced scenarios like e.g. making custom MCP server code available, you can alter the run script to mount your custom code into the image and configure your toolboxes to use said code accordingly.
@@ -139,9 +139,56 @@ docker run \
        "ghcr.io/githubsecuritylab/seclab-taskflow-agent" "$@"
 ```
 
+## General YAML file headers
+
+Every YAML files used by the Seclab Taskflow Agent must include a header like this:
+
+```yaml
+seclab-taskflow-agent:
+  version: 1
+  filetype: taskflow
+  filekey: GitHubSecurityLab/seclab-taskflow-agent/taskflows/CVE-2023-2283/CVE-2023-2283
+```
+
+The `filetype` determines whether the file defines a personality, toolbox, or
+taskflow. This means that different types of files can be stored in the same directory.
+A `filetype` can be one of the followings:
+  - taskflow
+  - personality
+  - toolbox
+  - prompt
+  - model_config
+
+We'll explain these file types in more detail in the following sections.
+
+The `filekey` is a unique name for the file. It is used to allow
+cross-referencing between files. For example, a taskflow can reference
+a personality by its filekey. Because filekeys are used for
+cross-referencing (rather than file paths), it means that you can move
+a file to a different directory without breaking the links. This also
+means that you can easily import new files by dropping them into a sub-directory.
+We recommend including something like your
+GitHub `<username>/<reponame>` in your filekeys to make them globally unique.
+
+In the above example, it is a `taskflow` file with `filekey` `GitHubSecurityLab/seclab-taskflow-agent/taskflows/CVE-2023-2283/CVE-2023-2283`. The `filekey` is needed to run the taskflow from command line, e.g.:
+
+```
+python3 main.py -t GitHubSecurityLab/seclab-taskflow-agent/taskflows/CVE-2023-2283/CVE-2023-2283
+```
+
+will run the taskflow.
+
+The `version` number in the header should always be 1. It means that the
+file uses version 1 of the seclab-taskflow-agent syntax. If we ever need
+to make a major change to the syntax, then we'll update the version number.
+This will hopefully enable us to make changes without breaking backwards
+compatibility.
+
+We'll now explain the role of different types of files and functionalities available to them.
+
 ## Personalities
 
-Core characteristics for a single Agent. Configured through YAML files in `personalities/`.
+Core characteristics for a single Agent. Configured through YAML files of `filetype` `personality`.
 
 These are system prompt level instructions.
 
@@ -152,7 +199,7 @@ Example:
 seclab-taskflow-agent:
   version: 1
   filetype: personality
-  filekey: personalities/examples/echo
+  filekey: GitHubSecurityLab/seclab-taskflow-agent/personalities/examples/echo
 
 personality: |
   You are a simple echo bot. You use echo tools to echo things.
@@ -162,14 +209,60 @@ task: |
 
 # personality toolboxes map to mcp servers made available to this Agent
 toolboxes:
-  - toolboxes/echo
+  - GitHubSecurityLab/seclab-taskflow-agent/toolboxes/echo
 ```
+
+In the above, the `personality` and `task` field specifies the system prompt to be used whenever this `personality` is used.
+The `toolboxes` are the tools that are available to this `personality`. The `toolboxes` should be a list of `filekey` specifying 
+files of the `filetype` `toolbox`. 
+
+Personalities can be used in two ways. First it can be used standalone with a prompt input from the command line:
+
+```
+python3 main.py -p GitHubSecurityLab/seclab-taskflow-agent/personalities/examples/echo "echo this message"
+```
+
+In this case, `personality` and `task` from `GitHubSecurityLab/seclab-taskflow-agent/personalities/examples/echo` are used as the 
+system prompt while the user argument `echo this message` is used as a user prompt. In this use case, the only tools that this 
+personality has access to is the `toolboxes` specified in the file.
+
+Personalities can also be used in a `taskflow` to perform tasks. This is done by adding the `personality` to the `agents` field in a `taskflow` file:
+
+```yaml
+taskflow:
+  - task:
+      ...
+      agents:
+        - GitHubSecurityLab/seclab-taskflow-agent/personalities/assistant
+      user_prompt: |
+        Fetch all the open pull requests from `github/codeql` github repository. 
+        You do not need to provide a summary of the results.
+      toolboxes:
+        - GitHubSecurityLab/seclab-taskflow-agent/toolboxes/github_official
+```
+
+In this case, the `personality` specified in `agents` provides the system prompt and the user prompt is specified in `user_prompt` field of the task. A big difference in this case is that the `toolboxes` specified in the `task` will overwrite the `toolboxes` that the `personality` has access to. So in the above example, the `GitHubSecurityLab/seclab-taskflow-agent/personalities/assistant` will have access to the `GitHubSecurityLab/seclab-taskflow-agent/toolboxes/github_official` toolbox instead of its own toolbox. It is important to note that the `personalities` toolboxes get *overwritten* in this case, so whenever a `toolboxes` field is provided in a `task`, it'll use the provided toolboxes and `personality` loses access to its own toolboxes. e.g.
+
+```yaml
+taskflow:
+  - task:
+      ...
+      agents:
+        - GitHubSecurityLab/seclab-taskflow-agent/personalities/examples/echo
+      user_prompt: |
+        echo this
+      toolboxes:
+        - GitHubSecurityLab/seclab-taskflow-agent/toolboxes/github_official
+```
+
+In the above `task`, `GitHubSecurityLab/seclab-taskflow-agent/personalities/examples/echo` will only have access to the `GitHubSecurityLab/seclab-taskflow-agent/toolboxes/github_official` and can no longer access the `GitHubSecurityLab/seclab-taskflow-agent/toolboxes/echo` `toolbox`. (Unless it is added also in the `task` `toolboxes`)
 
 ## Toolboxes
 
-MCP servers that provide tools. Configured through YAML files in `toolboxes/`.
+MCP servers that provide tools. Configured through YAML files of `filetype` `toolboxes`. These are files that provide
+the type and parameters to start an MCP server. 
 
-Example stdio config:
+For example, to start a stdio MCP server that are implemented in a python file:
 
 ```yaml
 # stdio mcp server configuration
@@ -187,9 +280,38 @@ server_params:
     SOME: value
 ```
 
+In the above, `command` and `args` are just the command and arguments that should be run to start the MCP server. Environment variables can be passed using the `env` field.
+
+A [streamable](https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http) is also supported by specifying the `kind` to `streamable`:
+
+```yaml
+server_params:
+  kind: streamable
+  url: https://api.githubcopilot.com/mcp/
+  #See https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md
+  headers:
+    Authorization: "{{ env GITHUB_AUTH_HEADER }}"
+  optional_headers:
+    X-MCP-Toolsets: "{{ env GITHUB_MCP_TOOLSETS }}"
+    X-MCP-Readonly: "{{ env GITHUB_MCP_READONLY }}"
+```
+
+You can force certain tools within a `toolbox` to require user confirmation to run. This can be helpful if a tool may perform irreversible actions and should require user approval prior to its use. This is done by including the name of the tool (function) in the MCP server in the `confirm` section:
+
+```yaml
+server_params:
+  kind: stdio
+  ...
+# the list of tools that you want the framework to confirm with the user before executing
+# use this to guard rail any potentially dangerous functions from MCP servers
+confirm:
+  - memcache_clear_cache
+```
+
 ## Taskflows
 
-A sequence of interdependent tasks performed by a set of Agents. Configured through a YAML based [grammar](taskflows/GRAMMAR.md) in [taskflows/](taskflows/).
+A sequence of interdependent tasks performed by a set of Agents. Configured through YAML files of `filetype` `taskflow`. 
+Taskflows supports a number of features, and their details can be found [here](taskflows/GRAMMAR.md).
 
 Example:
 
@@ -269,35 +391,104 @@ Taskflows support [Agent handoffs](https://openai.github.io/openai-agents-python
 
 See the [taskflow examples](taskflows/examples) for other useful Taskflow patterns such as repeatable and asynchronous templated prompts.
 
-## Notes about the yaml syntax
+## Prompt
 
-Every personality, toolbox, and taskflow is defined by a YAML file, which
-should always include a header like this:
+Prompts are configured through YAML files of `filetype` `prompt`. They define a reusable prompt that can be referenced in `taskflow` files.
 
-```
+They contain only one field, the `prompt` field, which is used to replace any `{{ PROMPT_<filekey> }}` template parameter in a taskflow. For example, the following `prompt`.
+
+```yaml
 seclab-taskflow-agent:
   version: 1
-  filetype: taskflow
-  filekey: taskflows/examples/example
+  filetype: prompt
+  filekey: GitHubSecurityLab/seclab-taskflow-agent/prompts/examples/example_prompt
+
+prompt: |
+  Tell me more about bananas as well.
 ```
 
-The "filetype" determines whether the file defines a personality, toolbox, or
-taskflow. This means that different types of files can be stored in the same directory.
+would replace any `{{ PROMPT_GitHubSecurityLab/seclab-taskflow-agent/prompts/examples/example_prompt }}` template parameter found in the `user_prompt` section in a taskflow:
 
-The "filekey" is a unique name for the file. It is used to allow
-cross-referencing between files. For example, a taskflow can reference
-a personality by its filekey. Because filekeys are used for
-cross-referencing (rather than file paths), it means that you can move
-a file to a different directory without breaking the links. This also
-means that you can easily import new files by dropping them into a sub-directory.
-We recommend including something like your
-GitHub "username/reponame" in your filekeys to make them globably unique.
+```yaml
+  - task:
+      agents:
+        - fruit_expert
+      user_prompt: |
+        Tell me more about apples.
 
-The "version" number in the header should always be 1. It means that the
-file uses version 1 of the seclab-taskflow-agent syntax. If we ever need
-to make a major change to the syntax, then we'll update the version number.
-This will hopefully enable us to make changes without breaking backwards
-compatibility.
+        {{ PROMPTS_GitHubSecurityLab/seclab-taskflow-agent/prompts/examples/example_prompt }}
+```
+
+becomes:
+
+```yaml
+  - task:
+      agents:
+        - fruit_expert
+      user_prompt: |
+        Tell me more about apples.
+
+        Tell me more about bananas as well.
+```
+
+## Model configs
+
+Model configs are configured through YAML files of `filetype` `model_config`. These provide a way to configure model versions.
+
+```yaml
+seclab-taskflow-agent:
+  version: 1
+  filetype: model_config
+  filekey: GitHubSecurityLab/seclab-taskflow-agent/configs/model_config
+models:
+   gpt_latest: gpt-5
+```
+
+A `model_config` file can be used in a `taskflow` and the values defined in `models` can then be used throughout.
+
+```yaml
+model_config: GitHubSecurityLab/seclab-taskflow-agent/configs/model_config
+
+taskflow:
+  - task:
+      model: gpt_latest
+```
+
+Model version can then be updated by changing `gpt_latest` in the `model_config` file and applied across all taskflows that use the config.
+
+## Passing environment variables
+
+Files of types `taskflow` and `toolbox` allow environment variables to be passed using the `env` field:
+
+```yaml
+server_params:
+  ...
+  env:
+    CODEQL_DBS_BASE_PATH: "{{ env CODEQL_DBS_BASE_PATH }}"
+    # prevent git repo operations on gh codeql executions
+    GH_NO_UPDATE_NOTIFIER: "Disable"
+```
+
+For `toolbox`, `env` can be used inside `server_params`. A template of the form `{{ env ENV_VARIABLE_NAME}}` can be used to pass values of the environment variable from the current process to the MCP server. So in the above, the MCP server is run with `GH_NO_UPDATE_NOTIFIER=disable` and passes the value of `CODEQL_DBS_BASE_PATH` from the current process to the MCP server. The templated paramater `{{ env CODEQL_DBS_BASE_PATH}}` is replaced by the value of the environment variable `CODEQL_DBS_BASE_PATH` in the current process. 
+
+Similarly, environment variables can be passed to a `task` in a `taskflow`:
+
+```yaml
+taskflow:
+  - task:
+      must_complete: true
+      agents:
+        - GitHubSecurityLab/seclab-taskflow-agent/personalities/assistant
+      user_prompt: |
+        Store the json array ["apples", "oranges", "bananas"] in the `fruits` memory key.
+      env:
+        MEMCACHE_STATE_DIR: "example_taskflow/"
+        MEMCACHE_BACKEND: "dictionary_file"
+```
+
+This overwrites the environment variables `MEMCACHE_STATE_DIR` and `MEMCACHE_BACKEND` for the task only. A template `{{ env ENV_VARIABLE_NAME}}` can also be used.
+
+Note that when using the template `{{ env ENV_VARIABLE_NAME }}`, `ENV_VARIABLE_NAME` must be the name of an environment variable in the current process.
 
 ## License
 

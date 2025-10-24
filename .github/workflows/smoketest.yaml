@@ -4,9 +4,14 @@ on:
   issue_comment:
     types: [created] # Add "smoke test" as a PR comment to trigger this workflow.
 
+# Permissions needed for reacting and adding comments for IssueOps commands
+# See: https://github.com/github/branch-deploy/blob/48285b12b35e47e2dde0c27d2abb33daa846d98b/README.md?plain=1#L189-L197
 permissions:
-  contents: read
-  pull-requests: write # For adding a reaction to the comment
+  pull-requests: write # Required for commenting on PRs
+  deployments: write # Required for updating deployment statuses
+  contents: write # Required for reading/writing the lock file
+  checks: read # Required for checking if the CI checks have passed in order to deploy the PR
+  statuses: read # Required for checking if all commit statuses are "success" in order to deploy the PR
 
 jobs:
   Linux:
@@ -19,6 +24,7 @@ jobs:
           trigger: "smoke test"
           reaction: "eyes"
           stable_branch: "main"
+          update_branch: "disabled"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -26,7 +32,9 @@ jobs:
           python-version: '3.11'
 
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
 
       - name: Setup Python venv
         run: |

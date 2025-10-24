@@ -26,7 +26,6 @@ def ensure_log():
         with open(LOGBOOK, 'x') as logbook:
             logbook.write(json.dumps(LOG, indent=2))
             logbook.flush()
-            pass
     except FileExistsError:
         pass
 

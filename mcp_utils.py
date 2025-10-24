@@ -309,7 +309,6 @@ def mcp_client_params(available_toolboxes: dict, requested_toolboxes: list):
                                 logging.critical(e)
                                 logging.info("Assuming toolbox has default configuration available")
                                 del env[k]
-                                pass
                     logging.debug(f"Tool call environment: {env}")
                     if args and isinstance(args, list):
                         for i, v in enumerate(args):
@@ -396,7 +395,6 @@ def mcp_client_params(available_toolboxes: dict, requested_toolboxes: list):
                                     logging.critical(e)
                                     logging.info("Assuming toolbox has default configuration available")
                                     del env[k]
-                                    pass
                         server_params['env'] = env
                 case _:
                     raise ValueError(f"Unsupported MCP transport {kind}")

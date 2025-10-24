@@ -16,7 +16,6 @@ class MemcacheDictionaryFileBackend(Backend):
             with open(self.memory, 'x') as memory:
                 memory.write(json.dumps(self.memcache))
                 memory.flush()
-                pass
         except FileExistsError:
             pass
     def _deflate_memory(self):
