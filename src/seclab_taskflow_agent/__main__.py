@@ -71,7 +71,7 @@ def parse_prompt_args(available_tools: AvailableTools,
     #parser.add_argument('remainder', nargs=argparse.REMAINDER, help="Remaining args")
     help_msg = parser.format_help()
     help_msg += "\nExamples:\n\n"
-    help_msg += "`-p personalities.assistant explain modems to me please`\n"
+    help_msg += "`-p seclab_taskflow_agent.personalities.assistant explain modems to me please`\n"
     try:
         args = parser.parse_known_args(user_prompt.split(' ') if user_prompt else None)
     except SystemExit as e:
