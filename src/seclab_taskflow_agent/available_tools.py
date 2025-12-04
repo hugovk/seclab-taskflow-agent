@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-from enum import Enum
-import logging
 import importlib.resources
+from enum import Enum
+
 import yaml
+
 
 class BadToolNameError(Exception):
     pass
@@ -72,7 +73,7 @@ class AvailableTools:
                 version = header['version']
                 if version != 1:
                     raise VersionException(str(version))
-                filetype = header['filetype'] 
+                filetype = header['filetype']
                 if filetype != tooltype.value:
                     raise FileTypeException(
                         f'Error in {f}: expected filetype to be {tooltype}, but it\'s {filetype}.')

@@ -1,10 +1,9 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-import os
-import shutil
 import subprocess
 import sys
+
 
 def get_image_digest(image_name, tag):
     result = subprocess.run(
