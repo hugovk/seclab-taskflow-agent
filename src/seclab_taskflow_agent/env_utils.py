@@ -11,6 +11,7 @@ def swap_env(s):
         raise LookupError(f"Requested {match.group(2)} from env but it does not exist!")
     return os.getenv(match.group(2)) if match else s
 
+
 class TmpEnv:
     def __init__(self, env):
         self.env = dict(env)
@@ -21,7 +22,7 @@ class TmpEnv:
             os.environ[k] = swap_env(v)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        for k, v in self.env.items():
+        for k in self.env:
             del os.environ[k]
             if k in self.restore_env:
                 os.environ[k] = self.restore_env[k]

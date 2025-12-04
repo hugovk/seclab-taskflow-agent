@@ -145,3 +145,85 @@ exclude_lines = [
   "if __name__ == .__main__.:",
   "if TYPE_CHECKING:",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+ignore = [
+  # Style rules that are too opinionated
+  "TID252",  # Relative imports are valid and preferred in Python packages
+  "T201",    # Print statements are valid for CLI tools and scripts
+  "T203",    # pprint is also valid for debugging
+  "FA100",   # Future annotations not required for Python 3.9+
+  "FA102",   # Future annotations not required for Python 3.9+
+  "EM101",   # Exception message string formatting - too strict
+  "EM102",   # Exception message f-string formatting - too strict
+  "EM103",   # Exception message .format() - too strict
+  "TRY003",  # Long messages outside exception class - too strict
+  "TRY300",  # Consider moving statement to else block - too strict
+  "TRY301",  # Abstract raise to an inner function - too strict
+  "TRY400",  # Use logging.exception instead of logging.error - too strict
+  "TRY401",  # Redundant exception object in logging.exception - too strict
+  "TRY004",  # Prefer TypeError exception for invalid type - too strict
+  "G004",    # Logging format string - too strict
+  "LOG015",  # Using root logger - too strict
+  "FBT001",  # Boolean positional argument - too strict
+  "FBT002",  # Boolean default argument - too strict
+  "FBT003",  # Boolean positional value - too strict
+  "BLE001",  # Blind exception catch - sometimes necessary
+  "PLR2004", # Magic value used in comparison - too strict for simple scripts
+  "S607",    # Starting process with partial executable path - OK for git/docker/etc
+  "S108",    # Probable insecure usage of temp file - too strict
+  "INP001",  # Missing __init__.py in namespace package - not needed for all dirs
+  "B023",    # Function definition does not bind loop variable - too strict
+  "B008",    # Function call in argument defaults - too strict
+  "B006",    # Mutable argument default - will be addressed separately
+  "PLW0602", # Global variable not assigned - too strict
+  "PLW0603", # Global variable being updated - too strict
+  "PLW2901", # Outer variable overwritten by inner loop - too strict
+  "PLW1508", # Invalid type for environment variable default - too strict
+  "PLC0415", # Import outside top-level - sometimes necessary
+  "RUF005",  # Collection literal concatenation - too strict
+  "RUF015",  # Prefer next() over [0] indexing - too strict
+  "RUF059",  # Unused unpacked assignment - too strict
+  "SLF001",  # Private member access - sometimes necessary
+  "ARG001",  # Unused function argument - sometimes required for API compatibility
+  "ARG002",  # Unused method argument - sometimes required for API compatibility
+  "ARG005",  # Unused lambda argument - sometimes required
+  "RET503",  # Missing explicit return - too strict
+  "RET504",  # Unnecessary assignment before return - too strict
+  "RET505",  # Unnecessary else after return - too strict
+  "RET506",  # Unnecessary else after raise - too strict
+  "SIM102",  # Collapsible if statements - sometimes less readable
+  "SIM115",  # Context manager for opening files - too strict
+  "SIM210",  # Use ternary operator - sometimes less readable
+  "E741",    # Ambiguous variable name - sometimes needed for math/physics
+  "E721",    # Type comparison instead of isinstance - sometimes intentional
+  "E722",    # Bare except - sometimes necessary
+  "UP006",   # Use modern type annotations - too strict for compatibility
+  "UP035",   # Import from collections.abc - too strict for compatibility
+  "N801",    # Class name should use CapWords - sometimes intentional
+  "N802",    # Function name should be lowercase - sometimes required by API
+  "N806",    # Variable in function should be lowercase - sometimes intentional
+  "N818",    # Exception name should end with 'Error' - sometimes 'Exception' is fine
+  "A001",    # Variable shadowing built-in - sometimes acceptable
+  "A002",    # Argument shadowing built-in - sometimes acceptable
+  "A004",    # Import shadowing built-in - sometimes acceptable
+  "B904",    # Raise from within except - will be addressed in future
+  "C405",    # Set literal instead of set() call - too strict
+  "ASYNC109", # Async function with timeout parameter - sometimes valid pattern
+  "C416",    # Unnecessary list comprehension - too strict
+  "PYI041",  # Type stub redundant numeric union - too strict
+  "PERF401", # List comprehension instead of loop - too strict
+]
+
+[tool.ruff.lint.per-file-ignores]
+# release_tools are standalone scripts, allow more flexibility
+"release_tools/*.py" = ["T201", "S607", "PLR2004", "S108", "INP001"]
+# Tests may need more flexibility
+"tests/*.py" = ["ARG001", "PLR2004", "S101"]
+# jsonrpyc is a forked library, be more lenient
+"src/seclab_taskflow_agent/mcp_servers/codeql/jsonrpyc/*.py" = ["B904", "N802", "A002", "ARG002"]
+

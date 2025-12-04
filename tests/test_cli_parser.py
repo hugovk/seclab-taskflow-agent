@@ -16,10 +16,10 @@ class TestCliGlobals:
     def test_parse_single_global(self):
         """Test parsing a single global variable from command line."""
         from seclab_taskflow_agent.__main__ import parse_prompt_args
+
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(
-            available_tools, "-t example -g fruit=apples")
+        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(available_tools, "-t example -g fruit=apples")
 
         assert t == "example"
         assert cli_globals == {"fruit": "apples"}
@@ -29,10 +29,12 @@ class TestCliGlobals:
     def test_parse_multiple_globals(self):
         """Test parsing multiple global variables from command line."""
         from seclab_taskflow_agent.__main__ import parse_prompt_args
+
         available_tools = AvailableTools()
 
         p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(
-            available_tools, "-t example -g fruit=apples -g color=red")
+            available_tools, "-t example -g fruit=apples -g color=red"
+        )
 
         assert t == "example"
         assert cli_globals == {"fruit": "apples", "color": "red"}
@@ -42,10 +44,10 @@ class TestCliGlobals:
     def test_parse_global_with_spaces(self):
         """Test parsing global variables with spaces in values."""
         from seclab_taskflow_agent.__main__ import parse_prompt_args
+
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(
-            available_tools, "-t example -g message=hello world")
+        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(available_tools, "-t example -g message=hello world")
 
         assert t == "example"
         # "world" becomes part of the prompt, not the value
@@ -55,10 +57,10 @@ class TestCliGlobals:
     def test_parse_global_with_equals_in_value(self):
         """Test parsing global variables with equals sign in value."""
         from seclab_taskflow_agent.__main__ import parse_prompt_args
+
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(
-            available_tools, "-t example -g equation=x=5")
+        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(available_tools, "-t example -g equation=x=5")
 
         assert t == "example"
         assert cli_globals == {"equation": "x=5"}
@@ -68,8 +70,9 @@ class TestCliGlobals:
         available_tools = AvailableTools()
 
         taskflow = available_tools.get_taskflow("tests.data.test_globals_taskflow")
-        assert 'globals' in taskflow
-        assert taskflow['globals']['test_var'] == 'default_value'
+        assert "globals" in taskflow
+        assert taskflow["globals"]["test_var"] == "default_value"
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

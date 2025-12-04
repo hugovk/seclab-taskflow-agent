@@ -13,17 +13,20 @@ from strenum import StrEnum
 
 # Enumeration of currently supported API endpoints.
 class AI_API_ENDPOINT_ENUM(StrEnum):
-  AI_API_MODELS_GITHUB = 'models.github.ai'
-  AI_API_GITHUBCOPILOT = 'api.githubcopilot.com'
+    AI_API_MODELS_GITHUB = "models.github.ai"
+    AI_API_GITHUBCOPILOT = "api.githubcopilot.com"
 
-COPILOT_INTEGRATION_ID = 'vscode-chat'
+
+COPILOT_INTEGRATION_ID = "vscode-chat"
+
 
 # you can also set https://api.githubcopilot.com if you prefer
 # but beware that your taskflows need to reference the correct model id
 # since different APIs use their own id schema, use -l with your desired
 # endpoint to retrieve the correct id names to use for your taskflow
 def get_AI_endpoint():
-  return os.getenv('AI_API_ENDPOINT', default='https://models.github.ai/inference')
+    return os.getenv("AI_API_ENDPOINT", default="https://models.github.ai/inference")
+
 
 def get_AI_token():
     """
@@ -31,13 +34,14 @@ def get_AI_token():
     The environment variable can be named either AI_API_TOKEN
     or COPILOT_TOKEN.
     """
-    token = os.getenv('AI_API_TOKEN')
+    token = os.getenv("AI_API_TOKEN")
     if token:
         return token
-    token = os.getenv('COPILOT_TOKEN')
+    token = os.getenv("COPILOT_TOKEN")
     if token:
         return token
     raise RuntimeError("AI_API_TOKEN environment variable is not set.")
+
 
 # assume we are >= python 3.9 for our type hints
 def list_capi_models(token: str) -> dict[str, dict]:
@@ -48,28 +52,30 @@ def list_capi_models(token: str) -> dict[str, dict]:
         netloc = urlparse(api_endpoint).netloc
         match netloc:
             case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
-                models_catalog = 'models'
+                models_catalog = "models"
             case AI_API_ENDPOINT_ENUM.AI_API_MODELS_GITHUB:
-                models_catalog = 'catalog/models'
+                models_catalog = "catalog/models"
             case _:
                 raise ValueError(f"Unsupported Model Endpoint: {api_endpoint}")
-        r = httpx.get(httpx.URL(api_endpoint).join(models_catalog),
-                      headers={
-                          'Accept': 'application/json',
-                          'Authorization': f'Bearer {token}',
-                          'Copilot-Integration-Id': COPILOT_INTEGRATION_ID
-                      })
+        r = httpx.get(
+            httpx.URL(api_endpoint).join(models_catalog),
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {token}",
+                "Copilot-Integration-Id": COPILOT_INTEGRATION_ID,
+            },
+        )
         r.raise_for_status()
         # CAPI vs Models API
         match netloc:
             case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
-                models_list = r.json().get('data', [])
+                models_list = r.json().get("data", [])
             case AI_API_ENDPOINT_ENUM.AI_API_MODELS_GITHUB:
                 models_list = r.json()
             case _:
                 raise ValueError(f"Unsupported Model Endpoint: {api_endpoint}")
         for model in models_list:
-            models[model.get('id')] = dict(model)
+            models[model.get("id")] = dict(model)
     except httpx.RequestError as e:
         logging.exception(f"Request error: {e}")
     except json.JSONDecodeError as e:
@@ -78,19 +84,17 @@ def list_capi_models(token: str) -> dict[str, dict]:
         logging.exception(f"HTTP error: {e}")
     return models
 
+
 def supports_tool_calls(model: str, models: dict) -> bool:
     api_endpoint = get_AI_endpoint()
     match urlparse(api_endpoint).netloc:
         case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
-            return models.get(model, {}).\
-                get('capabilities', {}).\
-                get('supports', {}).\
-                get('tool_calls', False)
+            return models.get(model, {}).get("capabilities", {}).get("supports", {}).get("tool_calls", False)
         case AI_API_ENDPOINT_ENUM.AI_API_MODELS_GITHUB:
-            return 'tool-calling' in models.get(model, {}).\
-                get('capabilities', [])
+            return "tool-calling" in models.get(model, {}).get("capabilities", [])
         case _:
             raise ValueError(f"Unsupported Model Endpoint: {api_endpoint}")
+
 
 def list_tool_call_models(token: str) -> dict[str, dict]:
     models = list_capi_models(token)

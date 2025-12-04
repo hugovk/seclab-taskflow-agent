@@ -1,16 +1,14 @@
-
 from __future__ import annotations
 
 __all__: list[str] = []
 
-import io
 import json
 import os
 import re
 import sys
 import threading
 import time
-from typing import Any, Callable, Optional, Protocol, Type
+from typing import Any, Callable, Protocol, Type
 
 from typing_extensions import TypeAlias
 
@@ -27,48 +25,35 @@ from .__meta__ import (  # noqa
     __version__,
 )
 
-Callback: TypeAlias = Callable[[Optional[Exception], Optional[Any]], None]
+Callback: TypeAlias = Callable[[Exception | None, Any | None], None]
 
 
 class InputStream(Protocol):
-
-    def fileno(self) -> int:
-        ...
+    def fileno(self) -> int: ...
 
     @property
-    def closed(self) -> bool:
-        ...
+    def closed(self) -> bool: ...
 
-    def isatty(self) -> bool:
-        ...
+    def isatty(self) -> bool: ...
 
-    def tell(self) -> int:
-        ...
+    def tell(self) -> int: ...
 
-    def seek(self, offset: int, whence: int = os.SEEK_SET, /) -> int:
-        ...
+    def seek(self, offset: int, whence: int = os.SEEK_SET, /) -> int: ...
 
-    def readline(self) -> str:
-        ...
+    def readline(self) -> str: ...
 
-    def readlines(self) -> list[str]:
-        ...
+    def readlines(self) -> list[str]: ...
 
 
 class OutputStream(Protocol):
-
-    def fileno(self) -> int:
-        ...
+    def fileno(self) -> int: ...
 
     @property
-    def closed(self) -> bool:
-        ...
+    def closed(self) -> bool: ...
 
-    def write(self, b: str) -> int:
-        ...
+    def write(self, b: str) -> int: ...
 
-    def flush(self) -> None:
-        ...
+    def flush(self) -> None: ...
 
 
 class Spec:
@@ -158,19 +143,19 @@ class Spec:
             raise RPCInvalidRequest(str(e))
 
         # start building the request string
-        req = f"{{\"jsonrpc\":\"2.0\",\"method\":\"{method}\""
+        req = f'{{"jsonrpc":"2.0","method":"{method}"'
 
         # add the id when given
         if id is not None:
             # encode string ids
             if isinstance(id, str):
                 id = json.dumps(id)
-            req += f",\"id\":{id}"
+            req += f',"id":{id}'
 
         # add parameters when given
         if params is not None:
             try:
-                req += f",\"params\":{json.dumps(params)}"
+                req += f',"params":{json.dumps(params)}'
             except Exception as e:
                 raise RPCParseError(str(e))
 
@@ -202,7 +187,7 @@ class Spec:
 
         # build the response string
         try:
-            res = f"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"result\":{json.dumps(result)}}}"
+            res = f'{{"jsonrpc":"2.0","id":{id},"result":{json.dumps(result)}}}'
         except Exception as e:
             raise RPCParseError(str(e))
 
@@ -236,12 +221,12 @@ class Spec:
 
         # build the inner error data
         message = get_error(code).title  # type: ignore[union-attr]
-        err_data = f"{{\"code\":{code},\"message\":\"{message}\""
+        err_data = f'{{"code":{code},"message":"{message}"'
 
         # insert data when given
         if data is not None:
             try:
-                err_data += f",\"data\":{json.dumps(data)}}}"
+                err_data += f',"data":{json.dumps(data)}}}'
             except Exception as e:
                 raise RPCParseError(str(e))
         else:
@@ -252,7 +237,7 @@ class Spec:
             id = json.dumps(id)
 
         # start building the error string
-        err = f"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"error\":{err_data}}}"
+        err = f'{{"jsonrpc":"2.0","id":{id},"error":{err_data}}}'
 
         return err
 
@@ -280,10 +265,11 @@ class RPC:
 
         import jsonrpyc
 
-        class MyTarget(object):
 
+        class MyTarget(object):
             def greet(self, name):
                 return f"Hi, {name}!"
+
 
         jsonrpc.RPC(MyTarget())
 
@@ -405,7 +391,7 @@ class RPC:
         callback: Callback | None = None,
         block: int = 0,
         timeout: float = 0,
-        params: dict | None = None
+        params: dict | None = None,
     ) -> int:
         """
         Performs an actual remote procedure call by writing a request representation (a string) to
@@ -492,7 +478,7 @@ class RPC:
         # dispatch to the correct handler
         if "method" in obj:
             # request
-            #self._handle_request(obj)
+            # self._handle_request(obj)
             if self.method_handlers:
                 self._handle_method(obj)
             else:
@@ -514,10 +500,10 @@ class RPC:
         :return: None.
         """
         try:
-            method = req['method']
+            method = req["method"]
             if method not in self.method_handlers:
                 raise ValueError(f"No handler defined for method: {method}")
-            result = self.method_handlers[method](req['params'])
+            result = self.method_handlers[method](req["params"])
             if "id" in req:
                 res = Spec.response(req["id"], result)
                 self._write(res)
@@ -528,7 +514,6 @@ class RPC:
                 else:
                     err = Spec.error(req["id"], -32603, data=str(e))
                 self._write(err)
-
 
     def _handle_request(self, req: dict[str, Any]) -> None:
         """
@@ -735,7 +720,6 @@ class Watchdog(threading.Thread):
             return
 
         while not self._stopper.is_set():
-
             # stop when stdin is closed
             if self.rpc.stdin.closed:
                 break
@@ -750,8 +734,8 @@ class Watchdog(threading.Thread):
                 line = None
 
             if line:
-                decoded_line = line.decode('utf-8').strip()
-                match = re.search(r'^Content-Length:\s*([0-9]+)', decoded_line, re.IGNORECASE)
+                decoded_line = line.decode("utf-8").strip()
+                match = re.search(r"^Content-Length:\s*([0-9]+)", decoded_line, re.IGNORECASE)
                 debug = False
                 if match:
                     if debug:
@@ -760,10 +744,10 @@ class Watchdog(threading.Thread):
                     _ = self.rpc.stdin.readline()
                     if debug:
                         print(f"Grabbing {content_length} bytes from stdin")
-                    msg = b''
+                    msg = b""
                     while len(msg) != content_length:
-                        msg += self.rpc.stdin.read(content_length-len(msg))
-                    decoded_msg = msg.decode('utf-8').strip()
+                        msg += self.rpc.stdin.read(content_length - len(msg))
+                    decoded_msg = msg.decode("utf-8").strip()
                     if debug:
                         print(f"Incoming jsonrpc message: {decoded_msg}")
                     self.rpc._handle(decoded_msg)
@@ -815,10 +799,7 @@ class RPCError(Exception):
         :return: Whether *code* is a valid error code range.
         """
         return (
-            isinstance(code, tuple) and
-            len(code) == 2 and
-            all(isinstance(i, int) for i in code) and
-            code[0] <= code[1]
+            isinstance(code, tuple) and len(code) == 2 and all(isinstance(i, int) for i in code) and code[0] <= code[1]
         )
 
     def __init__(self, data: str | None = None) -> None:
@@ -891,7 +872,6 @@ def get_error(code: int) -> Type[RPCError]:
 
 @register_error
 class RPCParseError(RPCError):
-
     code_range = (-32700, -32700)
     code = code_range[0]
     title = "Parse error"
@@ -899,7 +879,6 @@ class RPCParseError(RPCError):
 
 @register_error
 class RPCInvalidRequest(RPCError):
-
     code_range = (-32600, -32600)
     code = code_range[0]
     title = "Invalid Request"
@@ -907,7 +886,6 @@ class RPCInvalidRequest(RPCError):
 
 @register_error
 class RPCMethodNotFound(RPCError):
-
     code_range = (-32601, -32601)
     code = code_range[0]
     title = "Method not found"
@@ -915,7 +893,6 @@ class RPCMethodNotFound(RPCError):
 
 @register_error
 class RPCInvalidParams(RPCError):
-
     code_range = (-32602, -32602)
     code = code_range[0]
     title = "Invalid params"
@@ -923,7 +900,6 @@ class RPCInvalidParams(RPCError):
 
 @register_error
 class RPCInternalError(RPCError):
-
     code_range = (-32603, -32603)
     code = code_range[0]
     title = "Internal error"
@@ -931,7 +907,6 @@ class RPCInternalError(RPCError):
 
 @register_error
 class RPCServerError(RPCError):
-
     code_range = (-32099, -32000)
     code = code_range[0]  # default code when used as is
     title = "Server error"
