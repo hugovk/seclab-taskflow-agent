@@ -67,7 +67,12 @@ def get_custom_header() -> dict[str, str]:
         return {}
     
     name, value = parts
-    return {name.strip(): value.strip()}
+    name = name.strip()
+    value = value.strip()
+    if not name or not value:
+        logging.warning(f"Invalid AI_API_CUSTOM_HEADER: header name and value must be non-empty after stripping. Got: '{custom_header}'")
+        return {}
+    return {name: value}
 
 
 # assume we are >= python 3.9 for our type hints
