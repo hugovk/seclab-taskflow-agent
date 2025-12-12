@@ -52,7 +52,7 @@ def get_AI_token():
 
 def get_custom_header() -> dict[str, str]:
     """
-    Get custom header from environment variable CUSTOM_HEADER.
+    Get custom header from environment variable AI_API_CUSTOM_HEADER.
     Expected format: name:value
     Returns a dictionary that can be merged into request headers.
     """
