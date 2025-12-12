@@ -29,8 +29,6 @@ class AI_API_ENDPOINT_ENUM(StrEnum):
             case _:
                 raise ValueError(f"Unsupported endpoint: {self}")
 
-COPILOT_INTEGRATION_ID = 'vscode-chat'
-
 # you can also set https://api.githubcopilot.com if you prefer
 # but beware that your taskflows need to reference the correct model id
 # since different APIs use their own id schema, use -l with your desired
@@ -52,6 +50,26 @@ def get_AI_token():
         return token
     raise RuntimeError("AI_API_TOKEN environment variable is not set.")
 
+def get_custom_header() -> dict[str, str]:
+    """
+    Get custom header from environment variable CUSTOM_HEADER.
+    Expected format: name:value
+    Returns a dictionary that can be merged into request headers.
+    """
+    custom_header = os.getenv('AI_API_CUSTOM_HEADER')
+    if not custom_header:
+        return {}
+    
+    # Split on first colon to handle values that might contain colons
+    parts = custom_header.split(':', 1)
+    if len(parts) != 2:
+        logging.warning(f"Invalid AI_API_CUSTOM_HEADER format. Expected 'name:value', got: {custom_header}")
+        return {}
+    
+    name, value = parts
+    return {name.strip(): value.strip()}
+
+
 # assume we are >= python 3.9 for our type hints
 def list_capi_models(token: str) -> dict[str, dict]:
     """Retrieve a dictionary of available CAPI models"""
@@ -69,12 +87,11 @@ def list_capi_models(token: str) -> dict[str, dict]:
             case _:
                 raise ValueError(f"Unsupported Model Endpoint: {api_endpoint}\n"
                                  f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}")
-        r = httpx.get(httpx.URL(api_endpoint).join(models_catalog),
-                      headers={
-                          'Accept': 'application/json',
-                          'Authorization': f'Bearer {token}',
-                          'Copilot-Integration-Id': COPILOT_INTEGRATION_ID
-                      })
+        headers = {
+            'Accept': 'application/json',
+            'Authorization': f'Bearer {token}',
+        } | get_custom_header()
+        r = httpx.get(httpx.URL(api_endpoint).join(models_catalog), headers=headers)
         r.raise_for_status()
         # CAPI vs Models API
         match netloc:
