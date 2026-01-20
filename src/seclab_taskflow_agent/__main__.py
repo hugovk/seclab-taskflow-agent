@@ -22,7 +22,7 @@ from agents.agent import ModelSettings
 from agents.mcp import MCPServer, MCPServerStdio, MCPServerSse, MCPServerStreamableHttp, create_static_tool_filter
 from agents.extensions.handoff_prompt import prompt_with_handoff_instructions
 from agents import Tool, RunContextWrapper, TContext, Agent
-from openai import BadRequestError, APITimeoutError, RateLimitError
+from openai import BadRequestError, APITimeoutError, RateLimitError, APIStatusError
 from openai.types.responses import ResponseTextDeltaEvent
 from typing import Callable
 
@@ -334,7 +334,15 @@ async def deploy_task_agents(available_tools: AvailableTools,
                         return
                     except APITimeoutError:
                         if not max_retry:
-                            logging.error(f"Max retries for APITimeoutError reached")
+                            logging.error(f"Max API retries reached")
+                            raise
+                        max_retry -= 1
+                    except APIStatusError as e:
+                        # Retry transient “client closed request / upstream cancelled” style errors
+                        if getattr(e, "status_code", None) != 499:
+                            raise  # propagate non-499 errors
+                        # 499: retry
+                        if not max_retry:
                             raise
                         max_retry -= 1
                     except RateLimitError:
