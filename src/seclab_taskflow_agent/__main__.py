@@ -343,6 +343,7 @@ async def deploy_task_agents(available_tools: AvailableTools,
                             raise  # propagate non-499 errors
                         # 499: retry
                         if not max_retry:
+                            logging.error(f"Max API retries reached")
                             raise
                         max_retry -= 1
                     except RateLimitError:
