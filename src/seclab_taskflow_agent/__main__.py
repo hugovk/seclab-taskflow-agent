@@ -383,7 +383,7 @@ async def deploy_task_agents(available_tools: AvailableTools,
             await render_model_output(f"** 🤖❗ API Status Error: {e}\n",
                                 async_task=async_task,
                                 task_id=task_id)
-            logging.error(f"Bad Request: {e}")
+            logging.error(f"API Status Error: Status={e.status_code}, Response={e.response}")
 
         if async_task:
             await flush_async_output(task_id)
