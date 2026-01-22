@@ -8,8 +8,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 class Base(DeclarativeBase):
     pass
 
+
 class KeyValue(Base):
-    __tablename__ = 'key_value_store'
+    __tablename__ = "key_value_store"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str]
