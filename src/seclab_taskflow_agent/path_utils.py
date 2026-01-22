@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-import platformdirs
 import os
 from pathlib import Path
+
+import platformdirs
 
 
 def mcp_data_dir(packagename: str, mcpname: str, env_override: str | None) -> Path:

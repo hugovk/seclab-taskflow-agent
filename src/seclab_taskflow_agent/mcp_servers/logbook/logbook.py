@@ -1,12 +1,14 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-import logging
-#from mcp.server.fastmcp import FastMCP
-from fastmcp import FastMCP # move to FastMCP 2.0
 import json
+import logging
 from pathlib import Path
-from seclab_taskflow_agent.path_utils import mcp_data_dir, log_file_name
+
+#from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP  # move to FastMCP 2.0
+
+from seclab_taskflow_agent.path_utils import log_file_name, mcp_data_dir
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -46,7 +48,7 @@ def inflate_log():
     ensure_log()
     global LOG
     global LOGBOOK
-    with open(LOGBOOK, 'r') as logbook:
+    with open(LOGBOOK) as logbook:
         LOG = json.loads(logbook.read())
 
 

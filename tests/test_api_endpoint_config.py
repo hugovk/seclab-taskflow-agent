@@ -5,10 +5,13 @@
 Test API endpoint configuration.
 """
 
-import pytest
 import os
 from urllib.parse import urlparse
-from seclab_taskflow_agent.capi import get_AI_endpoint, AI_API_ENDPOINT_ENUM, list_capi_models
+
+import pytest
+
+from seclab_taskflow_agent.capi import AI_API_ENDPOINT_ENUM, get_AI_endpoint, list_capi_models
+
 
 class TestAPIEndpoint:
     """Test API endpoint configuration."""

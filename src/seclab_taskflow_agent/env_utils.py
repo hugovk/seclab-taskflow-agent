@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-import re
 import os
+import re
+
 
 def swap_env(s):
     match = re.search(r"{{\s*(env)\s+([A-Z0-9_]+)\s*}}", s)
