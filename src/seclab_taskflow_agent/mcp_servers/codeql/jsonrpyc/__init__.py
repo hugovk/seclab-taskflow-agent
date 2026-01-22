@@ -1,4 +1,5 @@
 
+# ruff: noqa: T201, A001, A002, A004, B006, B904, N818
 from __future__ import annotations
 
 __all__: list[str] = []

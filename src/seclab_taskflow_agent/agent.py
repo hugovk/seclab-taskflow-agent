@@ -64,7 +64,7 @@ class TaskRunHooks(RunHooks):
             self,
             context: RunContextWrapper[TContext],
             agent: Agent[TContext]) -> None:
-        logging.debug(f"TaskRunHooks on_agent_start: {agent.name}")
+        logging.debug("TaskRunHooks on_agent_start: %s", agent.name)
         if self._on_agent_start:
             await self._on_agent_start(context, agent)
 
@@ -73,7 +73,7 @@ class TaskRunHooks(RunHooks):
             context: RunContextWrapper[TContext],
             agent: Agent[TContext],
             output: Any) -> None:
-        logging.debug(f"TaskRunHooks on_agent_end: {agent.name}")
+        logging.debug("TaskRunHooks on_agent_end: %s", agent.name)
         if self._on_agent_end:
             await self._on_agent_end(context, agent, output)
 
@@ -82,7 +82,7 @@ class TaskRunHooks(RunHooks):
             context: RunContextWrapper[TContext],
             agent: Agent[TContext],
             tool: Tool) -> None:
-        logging.debug(f"TaskRunHooks on_tool_start: {tool.name}")
+        logging.debug("TaskRunHooks on_tool_start: %s", tool.name)
         if self._on_tool_start:
             await self._on_tool_start(context, agent, tool)
 
@@ -92,7 +92,7 @@ class TaskRunHooks(RunHooks):
             agent: Agent[TContext],
             tool: Tool,
             result: str) -> None:
-        logging.debug(f"TaskRunHooks on_tool_end: {tool.name} ")
+        logging.debug("TaskRunHooks on_tool_end: %s", tool.name)
         if self._on_tool_end:
             await self._on_tool_end(context, agent, tool, result)
 
@@ -115,7 +115,7 @@ class TaskAgentHooks(AgentHooks):
             context: RunContextWrapper[TContext],
             agent: Agent[TContext],
             source: Agent[TContext]) -> None:
-        logging.debug(f"TaskAgentHooks on_handoff: {source.name} -> {agent.name}")
+        logging.debug("TaskAgentHooks on_handoff: %s -> %s", source.name, agent.name)
         if self._on_handoff:
             await self._on_handoff(context, agent, source)
 
@@ -123,7 +123,7 @@ class TaskAgentHooks(AgentHooks):
             self,
             context: RunContextWrapper[TContext],
             agent: Agent[TContext]) -> None:
-        logging.debug(f"TaskAgentHooks on_start: {agent.name}")
+        logging.debug("TaskAgentHooks on_start: %s", agent.name)
         if self._on_start:
             await self._on_start(context, agent)
 
@@ -132,7 +132,7 @@ class TaskAgentHooks(AgentHooks):
             context: RunContextWrapper[TContext],
             agent: Agent[TContext],
             output: Any) -> None:
-        logging.debug(f"TaskAgentHooks on_end: {agent.name}")
+        logging.debug("TaskAgentHooks on_end: %s", agent.name)
         if self._on_end:
             await self._on_end(context, agent, output)
 
@@ -141,7 +141,7 @@ class TaskAgentHooks(AgentHooks):
             context: RunContextWrapper[TContext],
             agent: Agent[TContext],
             tool: Tool) -> None:
-        logging.debug(f"TaskAgentHooks on_tool_start: {tool.name}")
+        logging.debug("TaskAgentHooks on_tool_start: %s", tool.name)
         if self._on_tool_start:
             await self._on_tool_start(context, agent, tool)
 
@@ -151,7 +151,7 @@ class TaskAgentHooks(AgentHooks):
             agent: Agent[TContext],
             tool: Tool,
             result: str) -> None:
-        logging.debug(f"TaskAgentHooks on_tool_end: {tool.name}")
+        logging.debug("TaskAgentHooks on_tool_end: %s", tool.name)
         if self._on_tool_end:
             await self._on_tool_end(context, agent, tool, result)
 
@@ -159,13 +159,17 @@ class TaskAgent:
     def __init__(self,
                  name: str = 'TaskAgent',
                  instructions: str = '',
-                 handoffs: list = [],
+                 handoffs: list | None = None,
                  exclude_from_context: bool = False,
-                 mcp_servers: dict = [],
+                 mcp_servers: dict | None = None,
                  model: str = DEFAULT_MODEL,
                  model_settings: ModelSettings | None = None,
                  run_hooks: TaskRunHooks | None = None,
                  agent_hooks: TaskAgentHooks | None = None):
+        if handoffs is None:
+            handoffs = []
+        if mcp_servers is None:
+            mcp_servers = {}
         client = AsyncOpenAI(base_url=api_endpoint,
                              api_key=get_AI_token(),
                              default_headers={'Copilot-Integration-Id': COPILOT_INTEGRATION_ID})

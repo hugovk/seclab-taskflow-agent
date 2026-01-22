@@ -89,11 +89,11 @@ def list_capi_models(token: str) -> dict[str, dict]:
         for model in models_list:
             models[model.get('id')] = dict(model)
     except httpx.RequestError as e:
-        logging.exception(f"Request error: {e}")
+        logging.exception("Request error: %s", e)
     except json.JSONDecodeError as e:
-        logging.exception(f"JSON error: {e}")
+        logging.exception("JSON error: %s", e)
     except httpx.HTTPStatusError as e:
-        logging.exception(f"HTTP error: {e}")
+        logging.exception("HTTP error: %s", e)
     return models
 
 def supports_tool_calls(model: str, models: dict) -> bool:

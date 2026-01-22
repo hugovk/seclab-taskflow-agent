@@ -85,37 +85,44 @@ def parse_prompt_args(available_tools: AvailableTools,
         args = parser.parse_known_args(user_prompt.split(' ') if user_prompt else None)
     except SystemExit as e:
         if e.code == 2:
-            logging.exception(f"User provided incomplete prompt: {user_prompt}")
+            logging.exception("User provided incomplete prompt: %s", user_prompt)
             return None, None, None, None, help_msg
     p = args[0].p.strip() if args[0].p else None
     t = args[0].t.strip() if args[0].t else None
-    l = args[0].l
+    list_models = args[0].l
 
     # Parse global variables from command line
     cli_globals = {}
     if args[0].globals:
         for g in args[0].globals:
             if '=' not in g:
-                logging.error(f"Invalid global variable format: {g}. Expected KEY=VALUE")
+                logging.error("Invalid global variable format: %s. Expected KEY=VALUE", g)
                 return None, None, None, None, None, help_msg
             key, value = g.split('=', 1)
             cli_globals[key.strip()] = value.strip()
 
-    return p, t, l, cli_globals, ' '.join(args[0].prompt), help_msg
+    return p, t, list_models, cli_globals, ' '.join(args[0].prompt), help_msg
 
 async def deploy_task_agents(available_tools: AvailableTools,
                              agents: dict,
                              prompt: str,
                              async_task: bool = False,
-                             toolboxes_override: list = [],
-                             blocked_tools: list = [],
+                             toolboxes_override: list | None = None,
+                             blocked_tools: list | None = None,
                              headless: bool = False,
                              exclude_from_context: bool = False,
                              max_turns: int = DEFAULT_MAX_TURNS,
                              model: str = DEFAULT_MODEL,
-                             model_par: dict = {},
+                             model_par: dict | None = None,
                              run_hooks: TaskRunHooks | None = None,
                              agent_hooks: TaskAgentHooks | None = None):
+
+    if toolboxes_override is None:
+        toolboxes_override = []
+    if blocked_tools is None:
+        blocked_tools = []
+    if model_par is None:
+        model_par = {}
 
     task_id = str(uuid.uuid4())
     await render_model_output(f"** 🤖💪 Deploying Task Flow Agent(s): {list(agents.keys())}\n")
@@ -219,7 +226,7 @@ async def deploy_task_agents(available_tools: AvailableTools,
             # so we use a dedicated session task to accomplish both
             for s in mcp_servers:
                 server, server_proc = s
-                logging.debug(f"Connecting mcp server: {server._name}")
+                logging.debug("Connecting mcp server: %s", server._name)
                 if server_proc is not None:
                     server_proc.start()
                     await server_proc.async_wait_for_connection(poll_interval=0.1)
@@ -231,23 +238,23 @@ async def deploy_task_agents(available_tools: AvailableTools,
             for s in reversed(mcp_servers):
                 server, server_proc = s
                 try:
-                    logging.debug(f"Starting cleanup for mcp server: {server._name}")
+                    logging.debug("Starting cleanup for mcp server: %s", server._name)
                     await server.cleanup()
-                    logging.debug(f"Cleaned up mcp server: {server._name}")
+                    logging.debug("Cleaned up mcp server: %s", server._name)
                     if server_proc is not None:
                         server_proc.stop()
                         try:
                             await asyncio.to_thread(server_proc.join_and_raise)
                         except Exception as e:
-                            print(f"Streamable mcp server process exception: {e}")
+                            logging.error("Streamable mcp server process exception: %s", e)
                 except asyncio.CancelledError:
-                    logging.exception(f"Timeout on cleanup for mcp server: {server._name}")
+                    logging.exception("Timeout on cleanup for mcp server: %s", server._name)
                 finally:
                     mcp_servers.remove(s)
         except RuntimeError as e:
-            logging.exception(f"RuntimeError in mcp session task: {e}")
+            logging.exception("RuntimeError in mcp session task: %s", e)
         except asyncio.CancelledError as e:
-            logging.exception(f"Timeout on main session task: {e}")
+            logging.exception("Timeout on main session task: %s", e)
         finally:
             mcp_servers.clear()
 
@@ -345,12 +352,12 @@ async def deploy_task_agents(available_tools: AvailableTools,
                         max_retry -= 1
                     except RateLimitError:
                         if rate_limit_backoff == MAX_RATE_LIMIT_BACKOFF:
-                            raise APITimeoutError("Max rate limit backoff reached")
+                            raise APITimeoutError("Max rate limit backoff reached") from None
                         if rate_limit_backoff > MAX_RATE_LIMIT_BACKOFF:
                             rate_limit_backoff = MAX_RATE_LIMIT_BACKOFF
                         else:
                             rate_limit_backoff += rate_limit_backoff
-                        logging.exception(f"Hit rate limit ... holding for {rate_limit_backoff}")
+                        logging.exception("Hit rate limit ... holding for %s", rate_limit_backoff)
                         await asyncio.sleep(rate_limit_backoff)
             await _run_streamed()
             complete = True
@@ -360,22 +367,22 @@ async def deploy_task_agents(available_tools: AvailableTools,
             await render_model_output(f"** 🤖❗ Max Turns Reached: {e}\n",
                                 async_task=async_task,
                                 task_id=task_id)
-            logging.exception(f"Exceeded max_turns: {max_turns}")
+            logging.exception("Exceeded max_turns: %s", max_turns)
         except AgentsException as e:
             await render_model_output(f"** 🤖❗ Agent Exception: {e}\n",
                                 async_task=async_task,
                                 task_id=task_id)
-            logging.exception(f"Agent Exception: {e}")
+            logging.exception("Agent Exception: %s", e)
         except BadRequestError as e:
             await render_model_output(f"** 🤖❗ Request Error: {e}\n",
                                 async_task=async_task,
                                 task_id=task_id)
-            logging.exception(f"Bad Request: {e}")
+            logging.exception("Bad Request: %s", e)
         except APITimeoutError as e:
             await render_model_output(f"** 🤖❗ Timeout Error: {e}\n",
                                 async_task=async_task,
                                 task_id=task_id)
-            logging.exception(f"Bad Request: {e}")
+            logging.exception("Timeout Error: %s", e)
 
         if async_task:
             await flush_async_output(task_id)
@@ -394,7 +401,7 @@ async def deploy_task_agents(available_tools: AvailableTools,
             except asyncio.TimeoutError:
                 continue
             except Exception as e:
-                logging.exception(f"Exception in mcp server cleanup task: {e}")
+                logging.exception("Exception in mcp server cleanup task: %s", e)
 
 
 async def main(available_tools: AvailableTools,
@@ -493,7 +500,7 @@ async def main(available_tools: AvailableTools,
 
             # parse our taskflow grammar
             name = task_body.get('name', 'taskflow') # placeholder, not used yet
-            description = task_body.get('description', 'taskflow') # placeholder not used yet
+            task_body.get('description', 'taskflow') # placeholder not used yet
             agents = task_body.get('agents', [])
             headless = task_body.get('headless', False)
             blocked_tools = task_body.get('blocked_tools', [])
@@ -536,12 +543,12 @@ async def main(available_tools: AvailableTools,
             # pre-process the prompt for any inputs
             if prompt and inputs:
                 prompt = preprocess_prompt(prompt, 'INPUTS',
-                                           lambda key: inputs.get(key))
+                                           lambda key, inputs=inputs: inputs.get(key))
 
             # pre-process the prompt for any globals
             if prompt and global_variables:
                 prompt = preprocess_prompt(prompt, 'GLOBALS',
-                                           lambda key: global_variables.get(key))
+                                           lambda key, global_variables=global_variables: global_variables.get(key))
 
             with TmpEnv(env):
                 prompts_to_run = []
@@ -576,7 +583,7 @@ async def main(available_tools: AvailableTools,
                         await render_model_output("** 🤖❗MCP tool result iterable is empty!\n")
                     else:
                         # we use our own template marker here so prompts are not limited to use {}
-                        logging.debug(f"Entering templated prompt loop for results: {iterable_result}")
+                        logging.debug("Entering templated prompt loop for results: %s", iterable_result)
                         for value in iterable_result:
                             # support RESULT_key -> value swap format as well
                             if isinstance(value, dict) and m.group(1):
@@ -596,7 +603,20 @@ async def main(available_tools: AvailableTools,
                 else:
                     prompts_to_run.append(prompt)
 
-                async def run_prompts(async_task=False, max_concurrent_tasks=5):
+                async def run_prompts(
+                    async_task=False,
+                    max_concurrent_tasks=5,
+                    run=run,
+                    prompts_to_run=prompts_to_run,
+                    agents=agents,
+                    toolboxes_override=toolboxes_override,
+                    blocked_tools=blocked_tools,
+                    headless=headless,
+                    exclude_from_context=exclude_from_context,
+                    max_turns=max_turns,
+                    model=model,
+                    model_settings=model_settings
+                ):
 
                     # if this is a shell task, execute that and append the results
                     if run:
@@ -606,9 +626,9 @@ async def main(available_tools: AvailableTools,
                             result = shell_tool_call(run).content[0].model_dump_json()
                             last_mcp_tool_results.append(result)
                             return True
-                        except RuntimeError as e:
-                            await render_model_output(f"** 🤖❗ Shell Task Exception: {e}\n")
-                            logging.exception(f"Shell task error: {e}")
+                        except RuntimeError as runtime_err:
+                            await render_model_output(f"** 🤖❗ Shell Task Exception: {runtime_err}\n")
+                            logging.exception("Shell task error: %s", runtime_err)
                             return False
 
                     tasks = []
@@ -629,7 +649,18 @@ async def main(available_tools: AvailableTools,
                             resolved_agents[p] = personality
 
                         # limit the max concurrent tasks via a semaphore
-                        async def _deploy_task_agents(resolved_agents, prompt):
+                        async def _deploy_task_agents(
+                            resolved_agents,
+                            prompt,
+                            async_task=async_task,
+                            toolboxes_override=toolboxes_override,
+                            blocked_tools=blocked_tools,
+                            headless=headless,
+                            exclude_from_context=exclude_from_context,
+                            max_turns=max_turns,
+                            model=model,
+                            model_settings=model_settings
+                        ):
                             async with semaphore:
                                 result = await deploy_task_agents(
                                     available_tools,
@@ -669,7 +700,7 @@ async def main(available_tools: AvailableTools,
                     # if any prompt in a must_complete task is not complete the entire task is incomplete
                     for result in task_results:
                         if isinstance(result, Exception):
-                            logging.error(f"Caught exception in Gather: {result}")
+                            logging.error("Caught exception in Gather: %s", result)
                             result = False
                         complete = result and complete
                     return complete
@@ -688,16 +719,16 @@ if __name__ == '__main__':
     cwd = pathlib.Path.cwd()
     available_tools = AvailableTools()
 
-    p, t, l, cli_globals, user_prompt, help_msg = parse_prompt_args(available_tools)
+    p, t, list_models, cli_globals, user_prompt, help_msg = parse_prompt_args(available_tools)
 
-    if l:
+    if list_models:
         tool_models = list_tool_call_models(get_AI_token())
         for model in tool_models:
-            print(model)
+            sys.stdout.write(f"{model}\n")
         sys.exit(0)
 
     if p is None and t is None:
-        print(help_msg)
+        sys.stdout.write(help_msg)
         sys.exit(1)
 
     asyncio.run(main(available_tools, p, t, cli_globals, user_prompt), debug=True)

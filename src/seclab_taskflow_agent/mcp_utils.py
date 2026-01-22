@@ -69,9 +69,9 @@ class StreamableMCPThread(Thread):
                 writer.close()
                 await writer.wait_closed()
                 return  # Success
-            except (OSError, ConnectionRefusedError):
+            except (OSError, ConnectionRefusedError) as e:
                 if asyncio.get_event_loop().time() > deadline:
-                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds")
+                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds") from e
                 await asyncio.sleep(poll_interval)
 
     def wait_for_connection(self, timeout=30.0, poll_interval=0.5):
@@ -85,9 +85,9 @@ class StreamableMCPThread(Thread):
             try:
                 with socket.create_connection((host, port), timeout=2):
                     return  # Success
-            except OSError:
+            except OSError as e:
                 if time.time() > deadline:
-                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds")
+                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds") from e
                 time.sleep(poll_interval)
 
     def run(self):
@@ -298,7 +298,7 @@ def mcp_client_params(available_tools: AvailableTools, requested_toolboxes: list
             case 'stdio':
                 env = toolbox['server_params'].get('env')
                 args = toolbox['server_params'].get('args')
-                logging.debug(f"Initializing toolbox: {tb}\nargs:\n{args }\nenv:\n{env}\n")
+                logging.debug("Initializing toolbox: %s\nargs:\n%s\nenv:\n%s\n", tb, args, env)
                 if env and isinstance(env, dict):
                     for k, v in dict(env).items():
                         try:
@@ -307,11 +307,11 @@ def mcp_client_params(available_tools: AvailableTools, requested_toolboxes: list
                             logging.critical(e)
                             logging.info("Assuming toolbox has default configuration available")
                             del env[k]
-                logging.debug(f"Tool call environment: {env}")
+                logging.debug("Tool call environment: %s", env)
                 if args and isinstance(args, list):
                     for i, v in enumerate(args):
                         args[i] = swap_env(v)
-                logging.debug(f"Tool call args: {args}")
+                logging.debug("Tool call args: %s", args)
                 server_params['command'] = toolbox['server_params'].get('command')
                 server_params['args'] = args
                 server_params['env'] = env
@@ -375,7 +375,7 @@ def mcp_client_params(available_tools: AvailableTools, requested_toolboxes: list
                 args = toolbox['server_params'].get('args')
                 cmd = toolbox['server_params'].get('command')
                 if cmd is not None:
-                    logging.debug(f"Initializing streamable toolbox: {tb}\nargs:\n{args }\nenv:\n{env}\n")
+                    logging.debug("Initializing streamable toolbox: %s\nargs:\n%s\nenv:\n%s\n", tb, args, env)
                     exe = shutil.which(cmd)
                     if exe is None:
                         raise FileNotFoundError(f"Could not resolve path to {cmd}")
@@ -403,12 +403,23 @@ def mcp_client_params(available_tools: AvailableTools, requested_toolboxes: list
     return client_params
 
 def mcp_system_prompt(system_prompt: str, task: str,
-                      tools: list[str] = [],
-                      resources: list[str] = [],
-                      resource_templates: list[str] = [],
-                      important_guidelines: list[str] = [],
-                      server_prompts: list[str] = []):
+                      tools: list[str] | None = None,
+                      resources: list[str] | None = None,
+                      resource_templates: list[str] | None = None,
+                      important_guidelines: list[str] | None = None,
+                      server_prompts: list[str] | None = None):
     """Return a well constructed system prompt"""
+    if tools is None:
+        tools = []
+    if resources is None:
+        resources = []
+    if resource_templates is None:
+        resource_templates = []
+    if important_guidelines is None:
+        important_guidelines = []
+    if server_prompts is None:
+        server_prompts = []
+    
     prompt = f"""
 {system_prompt}
 """

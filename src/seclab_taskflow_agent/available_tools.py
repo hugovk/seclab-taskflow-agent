@@ -10,10 +10,10 @@ import yaml
 class BadToolNameError(Exception):
     pass
 
-class VersionException(Exception):
+class VersionError(Exception):
     pass
 
-class FileTypeException(Exception):
+class FileTypeError(Exception):
     pass
 
 class AvailableToolType(Enum):
@@ -72,19 +72,19 @@ class AvailableTools:
                 header = y['seclab-taskflow-agent']
                 version = header['version']
                 if version != 1:
-                    raise VersionException(str(version))
+                    raise VersionError(str(version))
                 filetype = header['filetype']
                 if filetype != tooltype.value:
-                    raise FileTypeException(
+                    raise FileTypeError(
                         f'Error in {f}: expected filetype to be {tooltype}, but it\'s {filetype}.')
                 if tooltype not in self.__yamlcache:
                     self.__yamlcache[tooltype] = {}
                 self.__yamlcache[tooltype][toolname] = y
                 return y
         except ModuleNotFoundError as e:
-            raise BadToolNameError(f'Cannot load {toolname}: {e}')
-        except FileNotFoundError:
+            raise BadToolNameError(f'Cannot load {toolname}: {e}') from e
+        except FileNotFoundError as e:
             # deal with editor temp files etc. that might have disappeared
-            raise BadToolNameError(f'Cannot load {toolname} because {f} is not a valid file.')
+            raise BadToolNameError(f'Cannot load {toolname} because {f} is not a valid file.') from e
         except ValueError as e:
-            raise BadToolNameError(f'Cannot load {toolname}: {e}')
+            raise BadToolNameError(f'Cannot load {toolname}: {e}') from e

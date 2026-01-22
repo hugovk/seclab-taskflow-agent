@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
+# ruff: noqa: T201, S607
 
 import subprocess
 import sys

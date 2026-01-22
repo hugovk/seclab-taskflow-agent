@@ -18,33 +18,33 @@ class TestCliGlobals:
         from seclab_taskflow_agent.__main__ import parse_prompt_args
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(
+        p, t, list_models, cli_globals, user_prompt, _ = parse_prompt_args(
             available_tools, "-t example -g fruit=apples")
 
         assert t == "example"
         assert cli_globals == {"fruit": "apples"}
         assert p is None
-        assert l is False
+        assert list_models is False
 
     def test_parse_multiple_globals(self):
         """Test parsing multiple global variables from command line."""
         from seclab_taskflow_agent.__main__ import parse_prompt_args
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(
+        p, t, list_models, cli_globals, user_prompt, _ = parse_prompt_args(
             available_tools, "-t example -g fruit=apples -g color=red")
 
         assert t == "example"
         assert cli_globals == {"fruit": "apples", "color": "red"}
         assert p is None
-        assert l is False
+        assert list_models is False
 
     def test_parse_global_with_spaces(self):
         """Test parsing global variables with spaces in values."""
         from seclab_taskflow_agent.__main__ import parse_prompt_args
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(
+        p, t, list_models, cli_globals, user_prompt, _ = parse_prompt_args(
             available_tools, "-t example -g message=hello world")
 
         assert t == "example"
@@ -57,7 +57,7 @@ class TestCliGlobals:
         from seclab_taskflow_agent.__main__ import parse_prompt_args
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(
+        p, t, list_models, cli_globals, user_prompt, _ = parse_prompt_args(
             available_tools, "-t example -g equation=x=5")
 
         assert t == "example"

@@ -3,6 +3,7 @@
 
 # a query-server2 codeql client
 import json
+import logging
 import os
 import re
 import subprocess
@@ -29,7 +30,7 @@ def _debug_log(msg):
 
 
 def shell_command_to_string(cmd):
-    print(f"Executing: {cmd}")
+    logging.debug("Executing: {cmd}")
     p = subprocess.Popen(cmd,
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE,
@@ -44,8 +45,10 @@ def shell_command_to_string(cmd):
 class CodeQL:
     def __init__(self,
                  codeql_cli=os.getenv("CODEQL_CLI", default="codeql"),
-                 server_options=["--threads=0", "--quiet"],
+                 server_options: list | None = None,
                  log_stderr=False):
+        if server_options is None:
+            server_options = ["--threads=0", "--quiet"]
         self.server_options = server_options.copy()
         if log_stderr:
             self.stderr_log = log_file_name('codeql_stderr_log.log')
@@ -87,7 +90,7 @@ class CodeQL:
 
         # set some default callbacks for common notifications
         def _handle_ql_progressUpdated(params):
-            print(f">> Progress: {params.get('step')}/{params.get('maxStep')} status: {params.get('message')}")
+            logging.debug(">> Progress: {params.get('step')}/{params.get('maxStep')} status: {params.get('message')}")
 
         ql_progressUpdated = 'ql/progressUpdated'
         if ql_progressUpdated not in self.method_handlers:
@@ -150,7 +153,7 @@ class CodeQL:
             if err:
                 raise err
             self.active_database = database
-            print(f"++ {rpc_method}: {res}")
+            logging.debug("++ {rpc_method}: {res}")
         return self._server_rpc_call(
             rpc_method,
             {'progressId': self._server_next_progress_id(),
@@ -163,7 +166,7 @@ class CodeQL:
             if err:
                 raise err
             self.active_database = None
-            print(f"++ {rpc_method}: {res}")
+            logging.debug("++ {rpc_method}: {res}")
         return self._server_rpc_call(
             rpc_method,
             {'progressId': self._server_next_progress_id(),
@@ -223,25 +226,25 @@ class CodeQL:
                         case 0:
                             return False, ''
                         case 1:
-                            print(f"xx ERROR Other: {message}")
+                            logging.debug("xx ERROR Other: {message}")
                             return True, message
                         case 2:
-                            print(f"xx ERROR Compilation: {message}")
+                            logging.debug("xx ERROR Compilation: {message}")
                             return True, message
                         case 3:
-                            print(f"xx ERROR OOM: {message}")
+                            logging.debug("xx ERROR OOM: {message}")
                             return True, message
                         case 4:
-                            print(f"xx ERROR Query Canceled: {message}")
+                            logging.debug("xx ERROR Query Canceled: {message}")
                             return True, message
                         case 5:
-                            print(f"xx ERROR DB Scheme mismatch: {message}")
+                            logging.debug("xx ERROR DB Scheme mismatch: {message}")
                             return True, message
                         case 6:
-                            print(f"xx ERROR DB Scheme no upgrade found: {message}")
+                            logging.debug("xx ERROR DB Scheme no upgrade found: {message}")
                             return True, message
                         case _:
-                            print(f"xx ERROR: unknown result type {result_type}: {message}")
+                            logging.debug("xx ERROR: unknown result type {result_type}: {message}")
                             return True, message
                 else:
                     return False, ''
@@ -250,7 +253,7 @@ class CodeQL:
             else:
                 self.active_query_error = (True, f"Unknown result state: {res}")
             self.active_query_id = None
-            print(f"++ {rpc_method}: {res}")
+            logging.debug("++ {rpc_method}: {res}")
             if err:
                 raise err
         self.active_query_id = self._server_rpc_call(
@@ -278,7 +281,7 @@ class CodeQL:
                 if match and match.group(2):
                     return match.group(2).split(':')
         except FileNotFoundError as e:
-            print(f"Error: {e}")
+            logging.debug("Error: {e}")
         return []
 
     def _lang_server_contact(self):
@@ -310,7 +313,7 @@ class CodeQL:
         args = ["resolve", "library-path"]
         args += ["-v", "--log-to-stderr", "--format=json"]
         if search_path:
-            print(f"Using search path: {search_path}")
+            logging.debug("Using search path: {search_path}")
             args += [f"--additional-packs=\"{search_path}\""]
         args += [f"--query={query_path}"]
         return json.loads(shell_command_to_string(
@@ -361,7 +364,7 @@ class CodeQL:
             with open(csv_out) as f:
                 return f.read()
         except RuntimeError as e:
-            print(f"Could not decode {bqrs_path} to {csv_out}: {e}")
+            logging.debug("Could not decode {bqrs_path} to {csv_out}: {e}")
             return ''
 
     def _bqrs_to_json(self, bqrs_path, entities):
@@ -374,7 +377,7 @@ class CodeQL:
             with open(json_out) as f:
                 return f.read()
         except RuntimeError as e:
-            print(f"Could not decode {bqrs_path} to {json_out}: {e}")
+            logging.debug("Could not decode {bqrs_path} to {json_out}: {e}")
             return ''
 
     def _bqrs_to_sarif(self, bqrs_path, query_info, max_paths=10):
@@ -392,7 +395,7 @@ class CodeQL:
                  "--", f"{bqrs_path}"]):
             with open(sarif_out) as f:
                 return f.read()
-        print(f"Could not decode {bqrs_path} to {sarif_out}")
+        logging.debug("Could not decode {bqrs_path} to {sarif_out}")
         return ''
 
 
@@ -408,12 +411,12 @@ class QueryServer(CodeQL):
             return _ACTIVE_CODEQL_SERVERS[self.database]
         if not self.active_connection:
             self._server_start()
-        print("Waiting for server start ...")
+        logging.debug("Waiting for server start ...")
         while not self.active_connection:
             time.sleep(WAIT_INTERVAL)
         if not self.active_database:
             self._server_register_database(self.database)
-        print("Waiting for database registration ...")
+        logging.debug("Waiting for database registration ...")
         while not self.active_database:
             time.sleep(WAIT_INTERVAL)
         if self.keep_alive:
@@ -482,7 +485,7 @@ def _get_source_prefix(database_path: Path, strip_leading_slash=True) -> str:
                 source_prefix = source_prefix.lstrip('/')
             return source_prefix
         except (yaml.YAMLError, FileNotFoundError, KeyError) as e:
-            logging.error(f"Error parsing sourceLocationPrefix: {e}")
+            logging.error("Error parsing sourceLocationPrefix: %s", e)
             raise
 
 
@@ -581,7 +584,7 @@ def file_from_uri(uri: str, database_path: str | Path):
 def run_query(query_path: str | Path, database: Path,
               entities="string",
               fmt='json',
-              search_paths=[],
+              search_paths: list | None = None,
               # a quick eval predicate or class name
               target='',
               progress_callback=None,
@@ -589,6 +592,8 @@ def run_query(query_path: str | Path, database: Path,
               # keep the query server alive if desired
               keep_alive=True,
               log_stderr=False):
+    if search_paths is None:
+        search_paths = []
     result = ''
     query_path = Path(query_path)
     target_pos = None

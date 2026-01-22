@@ -9,7 +9,7 @@ from mcp.types import CallToolResult, TextContent
 
 
 def shell_command_to_string(cmd):
-    logging.info(f"Executing: {cmd}")
+    logging.info("Executing: %s", cmd)
     p = subprocess.Popen(cmd,
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE,
