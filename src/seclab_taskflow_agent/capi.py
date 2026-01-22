@@ -37,10 +37,10 @@ COPILOT_INTEGRATION_ID = 'vscode-chat'
 # but beware that your taskflows need to reference the correct model id
 # since different APIs use their own id schema, use -l with your desired
 # endpoint to retrieve the correct id names to use for your taskflow
-def get_AI_endpoint():
+def get_AI_endpoint():  # noqa: N802
     return os.getenv('AI_API_ENDPOINT', default='https://models.github.ai/inference')
 
-def get_AI_token():
+def get_AI_token():  # noqa: N802
     """
     Get the token for the AI API from the environment.
     The environment variable can be named either AI_API_TOKEN

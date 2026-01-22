@@ -4,7 +4,6 @@ from __future__ import annotations
 
 __all__: list[str] = []
 
-import io
 import json
 import os
 import re
@@ -128,8 +127,8 @@ class Spec:
         """
         try:
             get_error(code)
-        except:
-            raise TypeError(f"invalid error code, got {code} ({type(code)})")
+        except Exception:  # noqa: E722
+            raise TypeError(f"invalid error code, got {code} ({type(code)})") from None
 
     @classmethod
     def request(

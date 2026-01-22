@@ -137,7 +137,7 @@ async def deploy_task_agents(available_tools: AvailableTools,
         toolboxes = toolboxes_override
     else:
         # otherwise all agents have the disjunction of all their tools available
-        for k, v in agents.items():
+        for _k, v in agents.items():
             if v.get('toolboxes', []):
                 toolboxes += [tb for tb in v['toolboxes'] if tb not in toolboxes]
 
@@ -462,7 +462,7 @@ async def main(available_tools: AvailableTools,
             models_params = m_config.get('model_settings', {})
             if models_params and not isinstance(models_params, dict):
                 raise ValueError(f"Settings section of model_config file {model_config} must be a dictionary")
-            if not set(models_params.keys()).difference(model_keys).issubset(set([])):
+            if not set(models_params.keys()).difference(model_keys).issubset(set()):
                 raise ValueError(f"Settings section of model_config file {model_config} contains models that are not in the model section")
             for k,v in models_params.items():
                 if not isinstance(v, dict):

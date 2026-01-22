@@ -34,7 +34,7 @@ class SqliteBackend(Backend):
     def get_state(self, key: str) -> Any:
         with Session(self.engine) as session:
             values = session.query(KeyValue).filter_by(key=key).all()
-        results = [v for v in values]
+        results = list(values)
         if not results:
             return ""
         results.sort(key=lambda x: x.id)

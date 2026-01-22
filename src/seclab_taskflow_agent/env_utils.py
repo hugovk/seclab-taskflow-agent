@@ -21,7 +21,7 @@ class TmpEnv:
             os.environ[k] = swap_env(v)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        for k, v in self.env.items():
+        for k, _v in self.env.items():
             del os.environ[k]
             if k in self.restore_env:
                 os.environ[k] = self.restore_env[k]

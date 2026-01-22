@@ -44,9 +44,11 @@ def shell_command_to_string(cmd):
 
 class CodeQL:
     def __init__(self,
-                 codeql_cli=os.getenv("CODEQL_CLI", default="codeql"),
+                 codeql_cli=None,  # noqa: B008
                  server_options: list | None = None,
                  log_stderr=False):
+        if codeql_cli is None:
+            codeql_cli = os.getenv("CODEQL_CLI", default="codeql")
         if server_options is None:
             server_options = ["--threads=0", "--quiet"]
         self.server_options = server_options.copy()
@@ -89,12 +91,12 @@ class CodeQL:
                              stderr=self.stderr_log)
 
         # set some default callbacks for common notifications
-        def _handle_ql_progressUpdated(params):
+        def _handle_ql_progress_updated(params):  # noqa: N802
             logging.debug(">> Progress: {params.get('step')}/{params.get('maxStep')} status: {params.get('message')}")
 
-        ql_progressUpdated = 'ql/progressUpdated'
-        if ql_progressUpdated not in self.method_handlers:
-            self.method_handlers[ql_progressUpdated] = _handle_ql_progressUpdated
+        ql_progress_updated = 'ql/progressUpdated'  # noqa: N806
+        if ql_progress_updated not in self.method_handlers:
+            self.method_handlers[ql_progress_updated] = _handle_ql_progress_updated
 
         rpc = jsonrpyc.RPC(method_handlers=self.method_handlers,
                            stdout=p.stdin,
@@ -280,8 +282,8 @@ class CodeQL:
                 match = re.search(r"^--search-path(\s+|=)\s*(.*)", f.read())
                 if match and match.group(2):
                     return match.group(2).split(':')
-        except FileNotFoundError as e:
-            logging.debug("Error: {e}")
+        except FileNotFoundError:
+            logging.debug("Error reading CodeQL CLI file")
         return []
 
     def _lang_server_contact(self):
@@ -363,8 +365,8 @@ class CodeQL:
             shell_command_to_string(self.codeql_cli + args)
             with open(csv_out) as f:
                 return f.read()
-        except RuntimeError as e:
-            logging.debug("Could not decode {bqrs_path} to {csv_out}: {e}")
+        except RuntimeError:
+            logging.debug("Could not decode %s to %s", bqrs_path, csv_out)
             return ''
 
     def _bqrs_to_json(self, bqrs_path, entities):
@@ -376,8 +378,8 @@ class CodeQL:
             shell_command_to_string(self.codeql_cli + args)
             with open(json_out) as f:
                 return f.read()
-        except RuntimeError as e:
-            logging.debug("Could not decode {bqrs_path} to {json_out}: {e}")
+        except RuntimeError:
+            logging.debug("Could not decode %s to %s", bqrs_path, json_out)
             return ''
 
     def _bqrs_to_sarif(self, bqrs_path, query_info, max_paths=10):

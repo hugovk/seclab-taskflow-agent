@@ -419,7 +419,7 @@ def mcp_system_prompt(system_prompt: str, task: str,
         important_guidelines = []
     if server_prompts is None:
         server_prompts = []
-    
+
     prompt = f"""
 {system_prompt}
 """

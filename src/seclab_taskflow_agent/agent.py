@@ -23,7 +23,7 @@ from agents import (
     set_tracing_disabled,
 )
 from agents.agent import FunctionToolResult, ModelSettings, ToolsToFinalOutputResult
-from agents.run import DEFAULT_MAX_TURNS, RunHooks
+from agents.run import DEFAULT_MAX_TURNS
 from dotenv import find_dotenv, load_dotenv
 from openai import AsyncOpenAI
 
@@ -183,13 +183,13 @@ class TaskAgent:
         # openai/openai-agents-python/blob/main/examples/agent_patterns
 
         # when we want to exclude tool results from context, we receive results here instead of sending to LLM
-        def _ToolsToFinalOutputFunction(context: RunContextWrapper[TContext],
+        def _tools_to_final_output_function(context: RunContextWrapper[TContext],
                                         results: list[FunctionToolResult]) -> ToolsToFinalOutputResult:
             return ToolsToFinalOutputResult(True, "Excluding tool results from LLM context")
 
         self.agent = Agent(name=name,
                            instructions=instructions,
-                           tool_use_behavior=_ToolsToFinalOutputFunction if exclude_from_context else 'run_llm_again',
+                           tool_use_behavior=_tools_to_final_output_function if exclude_from_context else 'run_llm_again',
                            model=OpenAIChatCompletionsModel(model=model, openai_client=client),
                            handoffs=handoffs,
                            mcp_servers=mcp_servers,
