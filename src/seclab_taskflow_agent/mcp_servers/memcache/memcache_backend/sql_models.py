@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-from sqlalchemy import String, Text, Integer, ForeignKey, Column
-from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
-from typing import Optional
+from sqlalchemy import Text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
 
 class Base(DeclarativeBase):
     pass

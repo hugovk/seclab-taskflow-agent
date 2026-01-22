@@ -2,16 +2,18 @@
 # SPDX-License-Identifier: MIT
 
 # a query-server2 codeql client
-import subprocess
-import re
 import json
-from pathlib import Path
+import os
+import re
+import subprocess
 import tempfile
 import time
-from urllib.parse import urlparse, unquote
-import os
 import zipfile
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
 import yaml
+
 from seclab_taskflow_agent.path_utils import log_file_name
 
 # this is a local fork of https://github.com/riga/jsonrpyc modified for our purposes
@@ -271,7 +273,7 @@ class CodeQL:
 
     def _search_paths_from_codeql_config(self, config="~/.config/codeql/config"):
         try:
-            with open(config, 'r') as f:
+            with open(config) as f:
                 match = re.search(r"^--search-path(\s+|=)\s*(.*)", f.read())
                 if match and match.group(2):
                     return match.group(2).split(':')
@@ -404,20 +406,19 @@ class QueryServer(CodeQL):
         global _ACTIVE_CODEQL_SERVERS
         if self.database in _ACTIVE_CODEQL_SERVERS:
             return _ACTIVE_CODEQL_SERVERS[self.database]
-        else:
-            if not self.active_connection:
-                self._server_start()
-            print("Waiting for server start ...")
-            while not self.active_connection:
-                time.sleep(WAIT_INTERVAL)
-            if not self.active_database:
-                self._server_register_database(self.database)
-            print("Waiting for database registration ...")
-            while not self.active_database:
-                time.sleep(WAIT_INTERVAL)
-            if self.keep_alive:
-                _ACTIVE_CODEQL_SERVERS[self.database] = self
-            return self
+        if not self.active_connection:
+            self._server_start()
+        print("Waiting for server start ...")
+        while not self.active_connection:
+            time.sleep(WAIT_INTERVAL)
+        if not self.active_database:
+            self._server_register_database(self.database)
+        print("Waiting for database registration ...")
+        while not self.active_database:
+            time.sleep(WAIT_INTERVAL)
+        if self.keep_alive:
+            _ACTIVE_CODEQL_SERVERS[self.database] = self
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.database not in _ACTIVE_CODEQL_SERVERS:
@@ -530,7 +531,7 @@ def _file_from_src_archive(relative_path: str | Path, database_path: str | Path,
     # fall back to relative path if resolved_path does not exist (might be a build dep file)
     if str(resolved_path) not in files:
         resolved_path = Path(relative_path)
-    file_data = shell_command_to_string(["unzip", "-p", src_path, f"{str(resolved_path)}"])
+    file_data = shell_command_to_string(["unzip", "-p", src_path, f"{resolved_path!s}"])
     if region:
         def region_from_file():
             # regions are 1+ based and look like 1:2:3:4

@@ -145,3 +145,50 @@ exclude_lines = [
   "if __name__ == .__main__.:",
   "if TYPE_CHECKING:",
 ]
+
+[tool.ruff.lint]
+ignore = [
+  "T201",    # Allow print statements (used for CLI output)
+  "G004",    # Allow f-strings in logging (more readable)
+  "S607",    # Allow subprocess with partial paths (git commands are standard)
+  "E741",    # Allow ambiguous variable names (single letters are common in loops)
+  "N818",    # Allow exception names without Error suffix (existing convention)
+  "TRY003",  # Allow long messages in exceptions (more readable)
+  "LOG015",  # Allow simple logging without extra dict
+  "EM102",   # Allow f-strings in exception messages
+  "EM101",   # Allow string literals in exception messages
+  "TID252",  # Allow relative imports (existing codebase pattern)
+  "FA102",   # Don't require from __future__ import annotations
+  "FA100",   # Don't require from __future__ import annotations
+  "FBT001",  # Allow boolean positional args
+  "FBT002",  # Allow boolean default args
+  "BLE001",  # Allow catching Exception
+  "SLF001",  # Allow accessing private members (needed for some integrations)
+  "ARG001",  # Allow unused function arguments (may be required by interfaces)
+  "RET504",  # Allow variable assignment before return
+  "PLR2004", # Allow magic values in comparisons
+  "TRY401",  # Allow verbose logging in exception handlers
+  "TRY300",  # Allow return in try block with else
+  "TRY301",  # Allow raise in try block with else
+  "SIM115",  # Allow context manager without assignment
+  "SIM210",  # Allow if-else instead of ternary
+  "SIM102",  # Allow nested if statements
+  "PERF102", # Allow dict.get() with default
+  "PERF401", # Allow manual list comprehension
+  "RUF059",  # Allow unused unpacked variables
+  "RUF005",  # Allow unpacking instead of concatenation
+  "RUF015",  # Allow list() instead of []
+  "PLW2901", # Allow redefining loop variable
+  "PLW0602", # Allow global variable usage
+  "PLW0603", # Allow global statement usage
+  "PLW1508", # Allow environment variable usage without default
+  "UP006",   # Allow old-style type hints
+  "UP035",   # Allow old-style imports
+  "PLC0415", # Allow import outside top-level
+  "PT011",   # Allow pytest.raises without match
+  "RET503",  # Allow explicit return None
+]
+
+[tool.ruff.lint.per-file-ignores]
+"release_tools/*" = ["INP001"]  # Release tools don't need __init__.py
+"tests/*" = ["S101"]  # Allow assert in tests

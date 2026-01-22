@@ -1,11 +1,12 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
+import logging
 import subprocess
 import tempfile
-import logging
 
 from mcp.types import CallToolResult, TextContent
+
 
 def shell_command_to_string(cmd):
     logging.info(f"Executing: {cmd}")

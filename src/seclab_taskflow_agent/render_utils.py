@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-import logging
 import asyncio
+import logging
+
 from .path_utils import log_file_name
 
 async_output = {}
@@ -18,9 +19,8 @@ async def flush_async_output(task_id: str):
     async with async_output_lock:
         if task_id not in async_output:
             raise ValueError(f"No async output for task: {task_id}")
-        else:
-            data = async_output[task_id]
-            del async_output[task_id]
+        data = async_output[task_id]
+        del async_output[task_id]
     await render_model_output(f"** 🤖✏️ Output for async task: {task_id}\n\n")
     await render_model_output(data)
 

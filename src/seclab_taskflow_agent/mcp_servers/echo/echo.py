@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: MIT
 
 import logging
+
 #from mcp.server.fastmcp import FastMCP
-from fastmcp import FastMCP # move to FastMCP 2.0
+from fastmcp import FastMCP  # move to FastMCP 2.0
+
 from seclab_taskflow_agent.path_utils import log_file_name
 
 logging.basicConfig(

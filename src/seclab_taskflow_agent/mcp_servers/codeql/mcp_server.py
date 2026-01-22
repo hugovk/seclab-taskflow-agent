@@ -1,20 +1,19 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-import logging
-from .client import run_query, file_from_uri, list_src_files, _debug_log, search_in_src_archive
-from pydantic import Field
-#from mcp.server.fastmcp import FastMCP, Context
-from fastmcp import FastMCP, Context # use FastMCP 2.0
-from pathlib import Path
-import os
 import csv
 import json
-import time
+import logging
 import re
-from urllib.parse import urlparse, unquote
-import zipfile
-from seclab_taskflow_agent.path_utils import mcp_data_dir, log_file_name
+from pathlib import Path
+
+#from mcp.server.fastmcp import FastMCP, Context
+from fastmcp import FastMCP  # use FastMCP 2.0
+from pydantic import Field
+
+from seclab_taskflow_agent.path_utils import log_file_name, mcp_data_dir
+
+from .client import _debug_log, file_from_uri, list_src_files, run_query, search_in_src_archive
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -131,8 +130,7 @@ def get_file_contents(
     try:
         # fix up any incorrectly formatted relative path uri
         if not file_uri.startswith('file:///'):
-            if file_uri.startswith('file://'):
-                file_uri = file_uri[len('file://'):]
+            file_uri = file_uri.removeprefix('file://')
             file_uri = 'file:///' + file_uri.lstrip('/')
         results = _get_file_contents(database_path, file_uri)
     except Exception as e:
