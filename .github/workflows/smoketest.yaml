@@ -20,6 +20,7 @@ jobs:
     if: github.event.issue.pull_request  # Make sure the comment is on a PR
     outputs:
       allowed: ${{ steps.branch-deploy.outputs.continue }}
+      sha: ${{ steps.branch-deploy.outputs.sha }}
     steps:
       - name: branch-deploy
         id: branch-deploy
@@ -48,9 +49,11 @@ jobs:
       - name: Checkout the PR
         env:
           PR_NUMBER: ${{ github.event.issue.number }}
+          REF: ${{ needs.permission-check.outputs.sha }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr checkout $PR_NUMBER
+          git checkout $REF
 
       - name: Setup Python venv
         run: |

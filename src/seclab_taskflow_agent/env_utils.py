@@ -4,11 +4,13 @@
 import re
 import os
 
+
 def swap_env(s):
     match = re.search(r"{{\s*(env)\s+([A-Z0-9_]+)\s*}}", s)
     if match and not os.getenv(match.group(2)):
         raise LookupError(f"Requested {match.group(2)} from env but it does not exist!")
     return os.getenv(match.group(2)) if match else s
+
 
 class TmpEnv:
     def __init__(self, env):

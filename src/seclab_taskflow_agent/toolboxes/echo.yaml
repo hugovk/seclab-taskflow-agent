@@ -12,3 +12,4 @@ server_params:
   args: ["-m", "seclab_taskflow_agent.mcp_servers.echo.echo"]
   env:
     TEST: value
+    LOG_DIR: "{{ env LOG_DIR }}"

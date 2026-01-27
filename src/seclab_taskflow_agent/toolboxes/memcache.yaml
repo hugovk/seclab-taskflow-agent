@@ -12,6 +12,7 @@ server_params:
   env:
     MEMCACHE_STATE_DIR: "{{ env MEMCACHE_STATE_DIR }}"
     MEMCACHE_BACKEND: "{{ env MEMCACHE_BACKEND }}"
+    LOG_DIR: "{{ env LOG_DIR }}"
 # the list of tools that you want the framework to confirm with the user before executing
 # use this to guard rail any potentially dangerous functions from MCP servers
 confirm:
