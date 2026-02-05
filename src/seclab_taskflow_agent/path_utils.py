@@ -1,9 +1,10 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-import platformdirs
 import os
 from pathlib import Path
+
+import platformdirs
 
 
 def mcp_data_dir(packagename: str, mcpname: str, env_override: str | None) -> Path:
@@ -24,13 +25,12 @@ def mcp_data_dir(packagename: str, mcpname: str, env_override: str | None) -> Pa
             return Path(p)
     # Use [platformdirs](https://pypi.org/project/platformdirs/) to
     # choose an appropriate location.
-    d = platformdirs.user_data_dir(appname="seclab-taskflow-agent",
-                                   appauthor="GitHubSecurityLab",
-                                   ensure_exists=True)
+    d = platformdirs.user_data_dir(appname="seclab-taskflow-agent", appauthor="GitHubSecurityLab", ensure_exists=True)
     # Each MCP server gets its own sub-directory
     p = Path(d).joinpath(packagename).joinpath(mcpname)
     p.mkdir(parents=True, exist_ok=True)
     return p
+
 
 def log_dir() -> Path:
     """
@@ -41,10 +41,11 @@ def log_dir() -> Path:
     """
     p = os.getenv("LOG_DIR")
     if not p:
-        p = platformdirs.user_log_dir(appname="seclab-taskflow-agent",
-                                      appauthor="GitHubSecurityLab",
-                                      ensure_exists=True)
+        p = platformdirs.user_log_dir(
+            appname="seclab-taskflow-agent", appauthor="GitHubSecurityLab", ensure_exists=True
+        )
     return Path(p)
+
 
 def log_file(filename: str) -> Path:
     """
@@ -57,6 +58,7 @@ def log_file(filename: str) -> Path:
         Path: The full path to the log file in the user log directory.
     """
     return log_dir().joinpath(filename)
+
 
 def log_file_name(filename: str) -> str:
     """

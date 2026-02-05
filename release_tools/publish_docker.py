@@ -1,35 +1,36 @@
 # SPDX-FileCopyrightText: 2025 GitHub
 # SPDX-License-Identifier: MIT
 
-import os
-import shutil
 import subprocess
 import sys
+
 
 def get_image_digest(image_name, tag):
     result = subprocess.run(
         ["docker", "buildx", "imagetools", "inspect", f"{image_name}:{tag}"],
-        stdout=subprocess.PIPE, check=True, text=True
+        stdout=subprocess.PIPE,
+        check=True,
+        text=True,
     )
     for line in result.stdout.splitlines():
         if line.strip().startswith("Digest:"):
             return line.strip().split(":", 1)[1].strip()
     return None
 
+
 def build_and_push_image(dest_dir, image_name, tag):
     # Build
-    subprocess.run([
-        "docker", "buildx", "build", "--platform", "linux/amd64", "-t", f"{image_name}:{tag}", dest_dir
-    ], check=True)
+    subprocess.run(
+        ["docker", "buildx", "build", "--platform", "linux/amd64", "-t", f"{image_name}:{tag}", dest_dir], check=True
+    )
     # Push
-    subprocess.run([
-        "docker", "push", f"{image_name}:{tag}"
-    ], check=True)
+    subprocess.run(["docker", "push", f"{image_name}:{tag}"], check=True)
     print(f"Pushed {image_name}:{tag}")
     digest = get_image_digest(image_name, tag)
     print(f"Image digest: {digest}")
     with open("/tmp/digest.txt", "w") as f:
         f.write(digest)
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:

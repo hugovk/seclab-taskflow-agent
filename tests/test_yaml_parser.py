@@ -8,7 +8,9 @@ Simple parsing + parsing of example taskflows.
 """
 
 import pytest
+
 from seclab_taskflow_agent.available_tools import AvailableTools
+
 
 class TestYamlParser:
     """Test suite for YamlParser class."""
@@ -16,13 +18,13 @@ class TestYamlParser:
     def test_yaml_parser_basic_functionality(self):
         """Test basic YAML parsing functionality."""
         available_tools = AvailableTools()
-        personality000 = available_tools.get_personality(
-            "tests.data.test_yaml_parser_personality000")
-        
-        assert personality000['seclab-taskflow-agent']['version'] == 1
-        assert personality000['seclab-taskflow-agent']['filetype'] == 'personality'
-        assert personality000['personality'] == 'You are a helpful assistant.\n'
-        assert personality000['task'] == 'Answer any question.\n'
+        personality000 = available_tools.get_personality("tests.data.test_yaml_parser_personality000")
+
+        assert personality000["seclab-taskflow-agent"]["version"] == 1
+        assert personality000["seclab-taskflow-agent"]["filetype"] == "personality"
+        assert personality000["personality"] == "You are a helpful assistant.\n"
+        assert personality000["task"] == "Answer any question.\n"
+
 
 class TestRealTaskflowFiles:
     """Test parsing of actual taskflow files in the project."""
@@ -33,12 +35,12 @@ class TestRealTaskflowFiles:
         available_tools = AvailableTools()
 
         # check that example.yaml is parsed correctly
-        example_task_flow = available_tools.get_taskflow(
-            "examples.taskflows.example")
-        assert 'taskflow' in example_task_flow
-        assert isinstance(example_task_flow['taskflow'], list)
-        assert len(example_task_flow['taskflow']) == 4  # 4 tasks in taskflow
-        assert example_task_flow['taskflow'][0]['task']['max_steps'] == 20
+        example_task_flow = available_tools.get_taskflow("examples.taskflows.example")
+        assert "taskflow" in example_task_flow
+        assert isinstance(example_task_flow["taskflow"], list)
+        assert len(example_task_flow["taskflow"]) == 4  # 4 tasks in taskflow
+        assert example_task_flow["taskflow"][0]["task"]["max_steps"] == 20
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

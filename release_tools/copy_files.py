@@ -3,17 +3,19 @@
 
 import os
 import shutil
-import sys
 import subprocess
+import sys
+
 
 def read_file_list(list_path):
     """
     Reads a file containing file paths, ignoring empty lines and lines starting with '#'.
     Returns a list of relative file paths.
     """
-    with open(list_path, "r") as f:
+    with open(list_path) as f:
         lines = [line.strip() for line in f]
     return [line for line in lines if line and not line.startswith("#")]
+
 
 def copy_files(file_list, dest_dir):
     """
@@ -28,6 +30,7 @@ def copy_files(file_list, dest_dir):
         os.makedirs(os.path.dirname(abs_dest), exist_ok=True)
         shutil.copy2(abs_src, abs_dest)
         print(f"Copied {abs_src} -> {abs_dest}")
+
 
 def ensure_git_repo(dest_dir):
     """
@@ -56,6 +59,7 @@ def ensure_git_repo(dest_dir):
             print(f"Failed to ensure 'main' branch in {dest_dir}: {e}")
             sys.exit(1)
 
+
 def git_add_files(file_list, dest_dir):
     """
     Runs 'git add' on each file in file_list within dest_dir.
@@ -71,6 +75,7 @@ def git_add_files(file_list, dest_dir):
                 print(f"Failed to git add {rel_path}: {e}")
     finally:
         os.chdir(cwd)
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
