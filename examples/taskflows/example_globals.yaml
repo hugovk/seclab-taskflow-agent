@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: taskflow
 
 globals:
@@ -12,4 +12,4 @@ taskflow:
       agents:
         - examples.personalities.fruit_expert
       user_prompt: |
-        Tell me more about {{ GLOBALS_fruit }}.
+        Tell me more about {{ globals.fruit }}.

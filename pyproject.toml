@@ -51,6 +51,7 @@ dependencies = [
   "importlib_metadata==8.7.0",
   "isodate==0.7.2",
   "jedi==0.19.2",
+  "Jinja2>=3.1.0",
   "jiter==0.10.0",
   "jsonschema==4.24.0",
   "jsonschema-path==0.3.4",
@@ -208,6 +209,7 @@ ignore = [
   "RUF100",   # Unused noqa directive
   "S108",     # Hardcoded temp file/directory
   "S607",     # Starting process with partial path
+  "S701",     # Using jinja2 templates with autoescape=False is dangerous and can lead to XSS
   "SIM102",   # Use single if statement
   "SIM115",   # Use context handler for file
   "SIM210",   # Use ternary operator

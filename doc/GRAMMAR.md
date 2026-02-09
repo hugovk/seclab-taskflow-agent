@@ -133,10 +133,10 @@ Often we may want to iterate through the same tasks with different inputs. For e
     agents:
       - seclab_taskflow_agent.personalities.c_auditer
     user_prompt: |
-      The function has name {{ RESULT_name }} and body {{ RESULT_body }} analyze the function.
+      The function has name {{ result.name }} and body {{ result.body }} analyze the function.
 ```
 
-In the above, the first task fetches functions in the code base and creates a json list object, with each entry having a `name` and `body` field. In the next task, `repeat_prompt` is set to true, meaning that a task is created for each individual object in the list and the object fields are referenced in the templated prompt using `{{ RESULT_<fieldname> }}`. In other words, `{{ RESULT_name }}` in the prompt is replaced with the value of the `name` field of the object etc. For example, if the list of functions fetched from the first task is:
+In the above, the first task fetches functions in the code base and creates a json list object, with each entry having a `name` and `body` field. In the next task, `repeat_prompt` is set to true, meaning that a task is created for each individual object in the list and the object fields are referenced in the templated prompt using `{{ result.fieldname }}`. In other words, `{{ result.name }}` in the prompt is replaced with the value of the `name` field of the object etc. For example, if the list of functions fetched from the first task is:
 
 ```javascript
 [{'name' : foo, 'body' : foo(){return 1;}}, {'name' : bar, 'body' : bar(a) {return a + 1;}}]
@@ -152,7 +152,7 @@ etc.
 
 Note that when using `repeat_prompt`, the last tool call result of the previous task is used as the iterable. It is recommended to keep the task that creates the iterable short and simple (e.g. just make one tool call to fetch a list of results) to avoid wrong results being passed to the repeat prompt.
 
-The iterable can also contain a list of primitives like string or number, in which case, the template `{{ RESULT }}` can be used in the `repeat_prompt` prompt to parse the results instead:
+The iterable can also contain a list of primitives like string or number, in which case, the template `{{ result }}` can be used in the `repeat_prompt` prompt to parse the results instead:
 
 ```yaml
   - task:
@@ -173,7 +173,7 @@ The iterable can also contain a list of primitives like string or number, in whi
       agents:
         - seclab_taskflow_agent.personalities.assistant
       user_prompt: |
-        What is the integer value of {{ RESULT }}?
+        What is the integer value of {{ result }}?
 ```
 
 Repeat prompt can be run in parallel by setting the `async` field to `true`:
@@ -185,7 +185,7 @@ Repeat prompt can be run in parallel by setting the `async` field to `true`:
     agents:
       - seclab_taskflow_agent.personalities.c_auditer
     user_prompt: |
-      The function has name {{ RESULT_name }} and body {{ RESULT_body }} analyze the function.
+      The function has name {{ result.name }} and body {{ result.body }} analyze the function.
 ```
 
 An optional limit can be set to limit the number of asynchronous tasks via `async_limit`. If not set, the default value (5) is used.
@@ -198,7 +198,7 @@ An optional limit can be set to limit the number of asynchronous tasks via `asyn
     agents:
       - seclab_taskflow_agent.personalities.c_auditer
     user_prompt: |
-      The function has name {{ RESULT_name }} and body {{ RESULT_body }} analyze the function.
+      The function has name {{ result.name }} and body {{ result.body }} analyze the function.
 ```
 
 Both `async` and `async_limit` have no effect when used outside of a `repeat_prompt`.
@@ -211,7 +211,7 @@ At the moment, we do not support nested `repeat_prompt`. So the following is not
     agents:
       - seclab_taskflow_agent.personalities.c_auditer
     user_prompt: |
-      The function has name {{ RESULT_name }} and body {{ RESULT_body }} analyze the function.
+      The function has name {{ result.name }} and body {{ result.body }} analyze the function.
   - task:
     repeat_prompt: true
     ...
@@ -233,7 +233,7 @@ For example:
       agents:
         - seclab_taskflow_agent.personalities.assistant
       user_prompt: |
-        What kind of fruit is {{ RESULT }}?
+        What kind of fruit is {{ result }}?
 ```
 
 The string `["apple", "banana", "orange"]` is then passed directly to the next task.
@@ -349,7 +349,7 @@ taskflow:
       agents:
         - examples.personalities.fruit_expert
       user_prompt: |
-        Tell me more about {{ GLOBALS_fruit }}.
+        Tell me more about {{ globals.fruit }}.
 ```
 
 Global variables can also be set or overridden from the command line using the `-g` or `--global` flag:
@@ -422,10 +422,10 @@ A reusable taskflow can also have a templated prompt that takes inputs from its 
       agents:
         - examples.personalities.fruit_expert
       user_prompt: |
-        Tell me more about {{ INPUTS_fruit }}.
+        Tell me more about {{ inputs.fruit }}.
 ```
 
-In this case, the template parameter `{{ INPUTS_fruit }}` is replaced by the value of `fruit` from the `inputs` of the user, which is apples in this case:
+In this case, the template parameter `{{ inputs.fruit }}` is replaced by the value of `fruit` from the `inputs` of the user, which is apples in this case:
 
 ```yaml
   - task:
@@ -437,9 +437,9 @@ In this case, the template parameter `{{ INPUTS_fruit }}` is replaced by the val
 
 ### Reusable Prompts
 
-Reusable prompts are defined in files of `filetype` `prompts`. These are like macros that get replaced when a templated parameter of the form `{{ PROMPTS_<import-path> }}` is encountered.
+Reusable prompts are defined in files of `filetype` `prompts`. These are like macros that get included using Jinja2's `{% include %}` directive.
 
-Tasks can incorporate templated prompts which are then replaced by the actual prompt. For example:
+Tasks can incorporate reusable prompts using the include directive. For example:
 
 Example:
 
@@ -449,8 +449,8 @@ Example:
         - examples.personalities.fruit_expert
       user_prompt: |
         Tell me more about apples.
-        
-        {{ PROMPTS_examples.prompts.example_prompt }}
+
+        {% include 'examples.prompts.example_prompt' %}
 ```
 and `examples.prompts.example_prompt` is the following:
 

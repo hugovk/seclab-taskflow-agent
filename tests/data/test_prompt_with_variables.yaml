@@ -6,4 +6,6 @@ seclab-taskflow-agent:
   filetype: prompt
 
 prompt: |
-  Tell me more about bananas as well.
+  This is a reusable prompt.
+  Global variable: {{ globals.test_global }}
+  Input variable: {{ inputs.test_input }}

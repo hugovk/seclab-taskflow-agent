@@ -5,12 +5,11 @@ seclab-taskflow-agent:
   version: "1.0"
   filetype: taskflow
 
+globals:
+  reusable_global: "global_from_parent"
+
 taskflow:
   - task:
-      agents:
-        - examples.personalities.fruit_expert
+      uses: tests.data.test_reusable_taskflow_with_variables
       inputs:
-        fruit: apples
-      user_prompt: |
-        Tell me more about {{ inputs.fruit }}.
-        
+        reusable_input: "input_from_parent"

@@ -8,9 +8,8 @@ seclab-taskflow-agent:
 taskflow:
   - task:
       agents:
-        - examples.personalities.fruit_expert
-      inputs:
-        fruit: apples
+        - tests.data.test_yaml_parser_personality000
       user_prompt: |
-        Tell me more about {{ inputs.fruit }}.
-        
+        This is a reusable taskflow.
+        Global: {{ globals.reusable_global }}
+        Input: {{ inputs.reusable_input }}

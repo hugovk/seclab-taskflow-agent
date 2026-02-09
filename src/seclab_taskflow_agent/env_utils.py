@@ -2,14 +2,41 @@
 # SPDX-License-Identifier: MIT
 
 import os
-import re
+import jinja2
 
 
-def swap_env(s):
-    match = re.search(r"{{\s*(env)\s+([A-Z0-9_]+)\s*}}", s)
-    if match and not os.getenv(match.group(2)):
-        raise LookupError(f"Requested {match.group(2)} from env but it does not exist!")
-    return os.getenv(match.group(2)) if match else s
+
+def swap_env(s: str) -> str:
+    """Replace {{ env('VAR') }} patterns in string with environment values.
+
+    Args:
+        s: String potentially containing env templates
+
+    Returns:
+        String with env templates replaced
+
+    Raises:
+        LookupError: If required env var not found
+    """
+    # Quick check if templating needed
+    if '{{' not in s:
+        return s
+
+    try:
+        # Import here to avoid circular dependency
+        from .template_utils import create_jinja_environment
+        from .available_tools import AvailableTools
+
+        available_tools = AvailableTools()
+        jinja_env = create_jinja_environment(available_tools)
+        template = jinja_env.from_string(s)
+        return template.render()
+    except jinja2.UndefinedError as e:
+        # Convert Jinja undefined to LookupError for compatibility
+        raise LookupError(str(e))
+    except jinja2.TemplateError:
+        # Not a template or failed to render, return as-is
+        return s
 
 
 class TmpEnv:

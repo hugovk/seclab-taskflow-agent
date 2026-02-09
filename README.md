@@ -174,15 +174,15 @@ Every YAML files used by the Seclab Taskflow Agent must include a header like th
 
 ```yaml
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: taskflow
 ```
 
-The `version` number in the header should always be 1. It means that the
+The `version` number in the header is currently 1. It means that the
 file uses version 1 of the seclab-taskflow-agent syntax. If we ever need
 to make a major change to the syntax, then we'll update the version number.
 This will hopefully enable us to make changes without breaking backwards
-compatibility.
+compatibility. Version can be specified as an integer, float, or string.
 
 The `filetype` determines whether the file defines a personality, toolbox, etc.
 This means that different types of files can be stored in the same directory.
@@ -294,10 +294,10 @@ server_params:
   url: https://api.githubcopilot.com/mcp/
   #See https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md
   headers:
-    Authorization: "{{ env GITHUB_AUTH_HEADER }}"
+    Authorization: "{{ env('GITHUB_AUTH_HEADER') }}"
   optional_headers:
-    X-MCP-Toolsets: "{{ env GITHUB_MCP_TOOLSETS }}"
-    X-MCP-Readonly: "{{ env GITHUB_MCP_READONLY }}"
+    X-MCP-Toolsets: "{{ env('GITHUB_MCP_TOOLSETS') }}"
+    X-MCP-Readonly: "{{ env('GITHUB_MCP_READONLY') }}"
 ```
 
 You can force certain tools within a `toolbox` to require user confirmation to run. This can be helpful if a tool may perform irreversible actions and should require user approval prior to its use. This is done by including the name of the tool (function) in the MCP server in the `confirm` section:
@@ -345,7 +345,7 @@ taskflow:
         Finally, why are apples and oranges healthy to eat?
 
       # taskflows can set temporary environment variables, these support the general
-      # "{{ env FROM_EXISTING_ENVIRONMENT }" pattern we use elsewhere as well
+      # "{{ env('FROM_EXISTING_ENVIRONMENT') }}" pattern we use elsewhere as well
       # these environment variables can then be made available to any stdio mcp server
       # through its respective yaml configuration, see memcache.yaml for an example
       # you can use these to override top-level environment variables on a per-task basis
@@ -492,12 +492,12 @@ Files of types `taskflow` and `toolbox` allow environment variables to be passed
 server_params:
   ...
   env:
-    CODEQL_DBS_BASE_PATH: "{{ env CODEQL_DBS_BASE_PATH }}"
+    CODEQL_DBS_BASE_PATH: "{{ env('CODEQL_DBS_BASE_PATH') }}"
     # prevent git repo operations on gh codeql executions
     GH_NO_UPDATE_NOTIFIER: "disable"
 ```
 
-For `toolbox`, `env` can be used inside `server_params`. A template of the form `{{ env ENV_VARIABLE_NAME }}` can be used to pass values of the environment variable from the current process to the MCP server. So in the above, the MCP server is run with `GH_NO_UPDATE_NOTIFIER=disable` and passes the value of `CODEQL_DBS_BASE_PATH` from the current process to the MCP server. The templated paramater `{{ env CODEQL_DBS_BASE_PATH }}` is replaced by the value of the environment variable `CODEQL_DBS_BASE_PATH` in the current process.
+For `toolbox`, `env` can be used inside `server_params`. A template of the form `{{ env('ENV_VARIABLE_NAME') }}` can be used to pass values of the environment variable from the current process to the MCP server. So in the above, the MCP server is run with `GH_NO_UPDATE_NOTIFIER=disable` and passes the value of `CODEQL_DBS_BASE_PATH` from the current process to the MCP server. The templated parameter `{{ env('CODEQL_DBS_BASE_PATH') }}` is replaced by the value of the environment variable `CODEQL_DBS_BASE_PATH` in the current process.
 
 Similarly, environment variables can be passed to a `task` in a `taskflow`:
 
@@ -514,9 +514,9 @@ taskflow:
         MEMCACHE_BACKEND: "dictionary_file"
 ```
 
-This overwrites the environment variables `MEMCACHE_STATE_DIR` and `MEMCACHE_BACKEND` for the task only. A template `{{ env ENV_VARIABLE_NAME }}` can also be used.
+This overwrites the environment variables `MEMCACHE_STATE_DIR` and `MEMCACHE_BACKEND` for the task only. A template `{{ env('ENV_VARIABLE_NAME') }}` can also be used.
 
-Note that when using the template `{{ env ENV_VARIABLE_NAME }}`, `ENV_VARIABLE_NAME` must be the name of an environment variable in the current process.
+Note that when using the template `{{ env('ENV_VARIABLE_NAME') }}`, `ENV_VARIABLE_NAME` must be the name of an environment variable in the current process.
 
 ## Import paths
 

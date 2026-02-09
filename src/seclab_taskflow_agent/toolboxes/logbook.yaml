@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: toolbox
 
 server_params:
@@ -10,8 +10,8 @@ server_params:
   command: python
   args: ["-m", "seclab_taskflow_agent.mcp_servers.logbook.logbook"]
   env:
-    LOGBOOK_STATE_DIR: "{{ env LOGBOOK_STATE_DIR }}"
-    LOG_DIR: "{{ env LOG_DIR }}"
+    LOGBOOK_STATE_DIR: "{{ env('LOGBOOK_STATE_DIR') }}"
+    LOG_DIR: "{{ env('LOG_DIR') }}"
 # the list of tools that you want the framework to confirm with the user before executing
 # use this to guard rail any potentially dangerous functions from MCP servers
 confirm:

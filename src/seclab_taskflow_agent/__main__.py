@@ -5,14 +5,12 @@ import argparse
 import asyncio
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import pathlib
-import re
 import sys
 import uuid
-from collections.abc import Callable
 from logging.handlers import RotatingFileHandler
-from pprint import pformat
 
 from agents import Agent, RunContextWrapper, TContext, Tool
 from agents.agent import ModelSettings
@@ -42,6 +40,8 @@ from .mcp_utils import (
     mcp_system_prompt,
 )
 from .path_utils import log_file_name
+from .template_utils import render_template
+import jinja2
 from .render_utils import flush_async_output, render_model_output
 from .shell_utils import shell_tool_call
 
@@ -521,75 +521,65 @@ async def main(available_tools: AvailableTools, p: str | None, t: str | None, cl
             async_task = task_body.get("async", False)
             max_concurrent_tasks = task_body.get("async_limit", 5)
 
-            def preprocess_prompt(prompt: str, tag: str, kv: Callable[[str], dict], kv_subkey=None):
-                _prompt = prompt
-                for full_match in re.findall(r"\{\{\s+" + tag + r"_(?:.*?)\s+\}\}", prompt):
-                    _m = re.search(r"\{\{\s+" + tag + r"_(.*?)\s+\}\}", full_match)
-                    if _m:
-                        key = _m.group(1)
-                        v = kv(key)
-                        if not v:
-                            raise KeyError(f"No such prompt key available: {key}")
-                        _prompt = _prompt.replace(full_match, str(v[kv_subkey]) if kv_subkey else str(v))
-                return _prompt
-
-            # pre-process the prompt for any prompts
-            if prompt:
-                prompt = preprocess_prompt(prompt, "PROMPTS", lambda key: available_tools.get_prompt(key), "prompt")
-
-            # pre-process the prompt for any inputs
-            if prompt and inputs:
-                prompt = preprocess_prompt(prompt, "INPUTS", lambda key: inputs.get(key))
-
-            # pre-process the prompt for any globals
-            if prompt and global_variables:
-                prompt = preprocess_prompt(prompt, "GLOBALS", lambda key: global_variables.get(key))
+            # Render prompt template with Jinja2 (skip if repeat_prompt since result is not yet available)
+            if prompt and not repeat_prompt:
+                try:
+                    prompt = render_template(
+                        template_str=prompt,
+                        available_tools=available_tools,
+                        globals_dict=global_variables,
+                        inputs_dict=inputs,
+                    )
+                except jinja2.TemplateError as e:
+                    logging.error(f"Template rendering error: {e}")
+                    raise ValueError(f"Failed to render prompt template: {e}")
 
             with TmpEnv(env):
                 prompts_to_run = []
                 if repeat_prompt:
-                    pattern = r"\{\{\s+RESULT_*(.*?|)\s+\}\}"
-                    m = re.search(pattern, prompt)
-                    # if last mcp tool result is an iterable it becomes available for repeat prompts
-                    if not m:
-                        logging.critical("Expected templated prompt, aborting!")
-                        break
+                    # Check if prompt contains result template variable
+                    if 'result' not in prompt.lower():
+                        logging.warning("repeat_prompt enabled but no {{ result }} in prompt")
+
                     try:
-                        # if this is json loadable, then it might be an iter, so check for that
+                        # Get last MCP tool result
                         last_result = json.loads(last_mcp_tool_results.pop())
                         text = last_result.get("text", "")
                         try:
                             iterable_result = json.loads(text)
                         except json.decoder.JSONDecodeError as exc:
-                            e = f"Could not json.loads result text: {text}"
-                            logging.critical(e)
-                            raise ValueError(e) from exc
-                        iter(iterable_result)
+                            logging.critical(f"Could not parse result text: {text}")
+                            raise ValueError(f"Result text is not valid JSON") from exc
+
+                        # Verify iterable
+                        try:
+                            iter(iterable_result)
+                        except TypeError:
+                            logging.critical("Last MCP tool result is not iterable")
+                            raise
                     except IndexError:
-                        logging.critical("No last mcp tool result available, aborting!")
+                        logging.critical("No last MCP tool result available")
                         raise
-                    except ValueError:
-                        logging.critical("Could not json.loads last mcp tool results, aborting!")
-                        raise
-                    except TypeError:
-                        logging.critical("Last mcp tool results are not iterable, aborting!")
-                        raise
+
                     if not iterable_result:
                         await render_model_output("** 🤖❗MCP tool result iterable is empty!\n")
                     else:
-                        # we use our own template marker here so prompts are not limited to use {}
-                        logging.debug(f"Entering templated prompt loop for results: {iterable_result}")
+                        logging.debug(f"Rendering templated prompts for results: {iterable_result}")
+
+                        # Render template for each result value
                         for value in iterable_result:
-                            # support RESULT_key -> value swap format as well
-                            if isinstance(value, dict) and m.group(1):
-                                _prompt = prompt
-                                for full_match in re.findall(r"\{\{\s+RESULT_(?:.*?)\s+\}\}", prompt):
-                                    _m = re.search(r"\{\{\s+RESULT_(.*?)\s+\}\}", full_match)
-                                    if _m and _m.group(1) in value:
-                                        _prompt = _prompt.replace(full_match, pformat(value.get(_m.group(1))))
-                                prompts_to_run.append(_prompt)
-                            else:
-                                prompts_to_run.append(prompt.replace(m.group(0), pformat(value)))
+                            try:
+                                rendered_prompt = render_template(
+                                    template_str=prompt,
+                                    available_tools=available_tools,
+                                    globals_dict=global_variables,
+                                    inputs_dict=inputs,
+                                    result_value=value,
+                                )
+                                prompts_to_run.append(rendered_prompt)
+                            except jinja2.TemplateError as e:
+                                logging.error(f"Error rendering template for result {value}: {e}")
+                                raise ValueError(f"Template rendering failed: {e}")
                 else:
                     prompts_to_run.append(prompt)
 

@@ -3,7 +3,7 @@
 
 # stdio mcp server configuration
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: toolbox
 
 server_params:
@@ -12,4 +12,4 @@ server_params:
   args: ["-m", "seclab_taskflow_agent.mcp_servers.echo.echo"]
   env:
     TEST: value
-    LOG_DIR: "{{ env LOG_DIR }}"
+    LOG_DIR: "{{ env('LOG_DIR') }}"

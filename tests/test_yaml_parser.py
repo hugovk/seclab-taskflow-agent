@@ -18,13 +18,33 @@ class TestYamlParser:
     def test_yaml_parser_basic_functionality(self):
         """Test basic YAML parsing functionality."""
         available_tools = AvailableTools()
-        personality000 = available_tools.get_personality("tests.data.test_yaml_parser_personality000")
+        personality000 = available_tools.get_personality(
+            "tests.data.test_yaml_parser_personality000")
 
-        assert personality000["seclab-taskflow-agent"]["version"] == 1
-        assert personality000["seclab-taskflow-agent"]["filetype"] == "personality"
-        assert personality000["personality"] == "You are a helpful assistant.\n"
-        assert personality000["task"] == "Answer any question.\n"
+        assert personality000['seclab-taskflow-agent']['version'] == "1.0"
+        assert personality000['seclab-taskflow-agent']['filetype'] == 'personality'
+        assert personality000['personality'] == 'You are a helpful assistant.\n'
+        assert personality000['task'] == 'Answer any question.\n'
 
+    def test_version_integer_format(self):
+        """Test that integer version format is accepted."""
+        available_tools = AvailableTools()
+        personality = available_tools.get_personality(
+            "tests.data.test_version_integer")
+
+        assert personality['seclab-taskflow-agent']['version'] == 1
+        assert personality['seclab-taskflow-agent']['filetype'] == 'personality'
+        assert personality['personality'] == 'Test personality with integer version.\n'
+
+    def test_version_float_format(self):
+        """Test that float version format is accepted."""
+        available_tools = AvailableTools()
+        personality = available_tools.get_personality(
+            "tests.data.test_version_float")
+
+        assert personality['seclab-taskflow-agent']['version'] == 1.0
+        assert personality['seclab-taskflow-agent']['filetype'] == 'personality'
+        assert personality['personality'] == 'Test personality with float version.\n'
 
 class TestRealTaskflowFiles:
     """Test parsing of actual taskflow files in the project."""

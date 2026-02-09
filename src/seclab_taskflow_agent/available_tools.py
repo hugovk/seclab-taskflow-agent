@@ -76,11 +76,26 @@ class AvailableTools:
             f = d.joinpath(filename + ".yaml")
             with open(f) as s:
                 y = yaml.safe_load(s)
-                header = y["seclab-taskflow-agent"]
-                version = header["version"]
-                if version != 1:
-                    raise VersionException(str(version))
-                filetype = header["filetype"]
+                header = y['seclab-taskflow-agent']
+                version = header['version']
+
+                # Normalize version to string format for backwards compatibility
+                if isinstance(version, int):
+                    # Convert integer 1 to "1.0" for semver compatibility
+                    version_str = f"{version}.0"
+                elif isinstance(version, float):
+                    # Convert float 1.2 to "1.2"
+                    version_str = str(version)
+                else:
+                    # Already a string, use as-is
+                    version_str = str(version)
+
+                # Validate version is 1.0
+                if version_str != "1.0":
+                    raise VersionException(
+                        f"Unsupported version: {version}. Only version 1.0 is supported."
+                    )
+                filetype = header['filetype'] 
                 if filetype != tooltype.value:
                     raise FileTypeException(f"Error in {f}: expected filetype to be {tooltype}, but it's {filetype}.")
                 if tooltype not in self.__yamlcache:

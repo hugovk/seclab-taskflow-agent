@@ -3,7 +3,7 @@
 
 # a simple example of the triage Agent pattern
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: taskflow
 
 taskflow:
@@ -39,4 +39,4 @@ taskflow:
         - examples.personalities.orange_expert
         - examples.personalities.banana_expert
       user_prompt: |
-        Tell me more about how {{ RESULT }} are grown.
+        Tell me more about how {{ result }} are grown.

@@ -3,7 +3,7 @@
 
 # personalities define the system prompt level directives for this Agent
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: personality
 
 personality: |

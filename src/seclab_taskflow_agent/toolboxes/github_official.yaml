@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: toolbox
 
 server_params:
@@ -10,7 +10,7 @@ server_params:
   url: https://api.githubcopilot.com/mcp/
   #See https://github.com/github/github-mcp-server/blob/main/docs/remote-server.md
   headers:
-    Authorization: "{{ env GITHUB_AUTH_HEADER }}"
+    Authorization: "{{ env('GITHUB_AUTH_HEADER') }}"
   optional_headers:
-    X-MCP-Toolsets: "{{ env GITHUB_MCP_TOOLSETS }}"
-    X-MCP-Readonly: "{{ env GITHUB_MCP_READONLY }}"
+    X-MCP-Toolsets: "{{ env('GITHUB_MCP_TOOLSETS') }}"
+    X-MCP-Readonly: "{{ env('GITHUB_MCP_READONLY') }}"

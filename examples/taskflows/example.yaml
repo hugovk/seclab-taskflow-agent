@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: taskflow
 
 # Import settings from a model_config file.
@@ -29,7 +29,7 @@ taskflow:
         Finally, why are apples and oranges healthy to eat?
         
       # taskflows can set temporary environment variables, these support the general
-      # "{{ env FROM_EXISTING_ENVIRONMENT }" pattern we use elsewhere as well
+      # "{{ env('FROM_EXISTING_ENVIRONMENT') }}" pattern we use elsewhere as well
       # these environment variables can then be made available to any stdio mcp server
       # through its respective yaml configuration, see memcache.yaml for an example
       # you can use these to override top-level environment variables on a per-task basis
@@ -70,4 +70,4 @@ taskflow:
       agents:
         - seclab_taskflow_agent.personalities.assistant
       user_prompt: |
-        What kind of fruit is {{ RESULT }}?
+        What kind of fruit is {{ result }}?

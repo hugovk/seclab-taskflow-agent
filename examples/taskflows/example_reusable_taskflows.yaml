@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: taskflow
 
 model_config: examples.model_configs.model_config
@@ -12,4 +12,4 @@ taskflow:
       # with the `uses` directive we can reuse single task taskflows
       uses: examples.taskflows.single_step_taskflow
       # and optionally override any of its configurations
-      model: gpt_latest
+      model: gpt_default

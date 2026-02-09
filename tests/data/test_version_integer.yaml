@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: MIT
 
 seclab-taskflow-agent:
-  version: "1.0"
+  version: 1
   filetype: personality
 
 personality: |
-  You are an apples expert.
-
+  Test personality with integer version.
 task: |
-  Answer any questions about apples.
+  Test task.
