@@ -54,7 +54,7 @@ jobs:
           MODEL_TEMP: ${{ vars.SMOKETEST_TEMPERATURE }}
           AI_API_ENDPOINT: ${{ vars.SMOKETEST_ENDPOINT }}
           AI_API_TOKEN: ${{ secrets.AI_API_TOKEN }}
-          GITHUB_AUTH_HEADER: "Bearer ${{ secrets.GITHUB_TOKEN }}"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         run: |
           source .venv/bin/activate
