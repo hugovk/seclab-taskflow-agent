@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
+"""Utilities for rendering and buffering streamed model output."""
+
 import asyncio
 import logging
 
@@ -16,7 +18,8 @@ render_logger.addHandler(file_handler)
 render_logger.propagate = False
 
 
-async def flush_async_output(task_id: str):
+async def flush_async_output(task_id: str) -> None:
+    """Flush buffered async output for *task_id* to the console."""
     async with async_output_lock:
         if task_id not in async_output:
             raise ValueError(f"No async output for task: {task_id}")
@@ -26,7 +29,8 @@ async def flush_async_output(task_id: str):
     await render_model_output(data)
 
 
-async def render_model_output(data: str, log: bool = True, async_task: bool = False, task_id: str | None = None):
+async def render_model_output(data: str, log: bool = True, async_task: bool = False, task_id: str | None = None) -> None:
+    """Print model output to the console, optionally buffering for async tasks."""
     async with async_output_lock:
         if async_task and task_id:
             if task_id in async_output:

@@ -15,11 +15,10 @@ from typing import TYPE_CHECKING
 
 from agents.mcp import MCPServerSse, MCPServerStdio, MCPServerStreamableHttp, create_static_tool_filter
 
+from .mcp_transport import ReconnectingMCPServerStdio, StreamableMCPThread
 from .mcp_utils import (
     DEFAULT_MCP_CLIENT_SESSION_TIMEOUT,
     MCPNamespaceWrap,
-    ReconnectingMCPServerStdio,
-    StreamableMCPThread,
     mcp_client_params,
 )
 

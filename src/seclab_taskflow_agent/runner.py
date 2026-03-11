@@ -29,16 +29,186 @@ from .agent import DEFAULT_MODEL, TaskAgent, TaskAgentHooks, TaskRunHooks
 from .available_tools import AvailableTools
 from .env_utils import TmpEnv
 from .mcp_lifecycle import MCP_CLEANUP_TIMEOUT, build_mcp_servers, mcp_session_task
-from .models import PersonalityDocument, TaskDefinition
-from .mcp_utils import compress_name, mcp_client_params, mcp_system_prompt
+from .models import ModelConfigDocument, PersonalityDocument, TaskDefinition
+from .mcp_prompt import mcp_system_prompt
+from .mcp_utils import compress_name, mcp_client_params
 from .render_utils import flush_async_output, render_model_output
 from .shell_utils import shell_tool_call
 from .template_utils import render_template
 
-DEFAULT_MAX_TURNS = 50
-RATE_LIMIT_BACKOFF = 5
-MAX_RATE_LIMIT_BACKOFF = 120
-MAX_API_RETRY = 5
+DEFAULT_MAX_TURNS = 50  # Maximum agent turns before forced termination
+RATE_LIMIT_BACKOFF = 5  # Initial backoff in seconds after a rate-limit response
+MAX_RATE_LIMIT_BACKOFF = 120  # Maximum backoff cap in seconds for rate-limit retries
+MAX_API_RETRY = 5  # Maximum number of consecutive API error retries
+
+
+def _resolve_model_config(
+    available_tools: AvailableTools,
+    model_config_ref: str,
+) -> tuple[list[str], dict[str, str], dict[str, dict[str, Any]]]:
+    """Load and validate the model configuration file.
+
+    Args:
+        available_tools: Tool registry used to load the config file.
+        model_config_ref: Reference name for the model config document.
+
+    Returns:
+        A tuple of (model_keys, model_dict, models_params) where model_keys is
+        the list of logical model names, model_dict maps them to provider model
+        IDs, and models_params holds per-model settings.
+
+    Raises:
+        ValueError: If the config file has structural problems.
+    """
+    m_config: ModelConfigDocument = available_tools.get_model_config(model_config_ref)
+    model_dict: dict[str, str] = m_config.models or {}
+    if model_dict and not isinstance(model_dict, dict):
+        raise ValueError(f"Models section of the model_config file {model_config_ref} must be a dictionary")
+    model_keys: list[str] = list(model_dict.keys())
+    models_params: dict[str, dict[str, Any]] = m_config.model_settings or {}
+    if models_params and not isinstance(models_params, dict):
+        raise ValueError(f"Settings section of model_config file {model_config_ref} must be a dictionary")
+    if not set(models_params.keys()).difference(model_keys).issubset(set()):
+        raise ValueError(
+            f"Settings section of model_config file {model_config_ref} contains models not in the model section"
+        )
+    for k, v in models_params.items():
+        if not isinstance(v, dict):
+            raise ValueError(f"Settings for model {k} in model_config file {model_config_ref} is not a dictionary")
+    return model_keys, model_dict, models_params
+
+
+def _merge_reusable_task(
+    available_tools: AvailableTools,
+    task: TaskDefinition,
+) -> TaskDefinition:
+    """Merge a reusable taskflow into the current task definition.
+
+    Args:
+        available_tools: Tool registry used to load the reusable taskflow.
+        task: Current task whose ``uses`` field references a reusable taskflow.
+
+    Returns:
+        A new TaskDefinition with parent defaults filled in where the current
+        task uses its own defaults.
+
+    Raises:
+        ValueError: If the reusable taskflow is missing or has more than 1 task.
+    """
+    reusable_doc = available_tools.get_taskflow(task.uses)
+    if reusable_doc is None:
+        raise ValueError(f"No such reusable taskflow: {task.uses}")
+    if len(reusable_doc.taskflow) > 1:
+        raise ValueError("Reusable taskflows can only contain 1 task")
+    parent_task = reusable_doc.taskflow[0].task
+    merged: dict[str, Any] = parent_task.model_dump(by_alias=True, exclude_defaults=True)
+    current: dict[str, Any] = task.model_dump(by_alias=True, exclude_defaults=True)
+    merged.update(current)
+    return TaskDefinition.model_validate(merged)
+
+
+def _resolve_task_model(
+    task: TaskDefinition,
+    model_keys: list[str],
+    model_dict: dict[str, str],
+    models_params: dict[str, dict[str, Any]],
+) -> tuple[str, dict[str, Any]]:
+    """Resolve the final model name and settings for a task.
+
+    Args:
+        task: The task definition containing optional model/model_settings.
+        model_keys: Logical model names from the model config.
+        model_dict: Mapping of logical model names to provider model IDs.
+        models_params: Per-model settings from the model config.
+
+    Returns:
+        A tuple of (resolved_model_name, merged_model_settings).
+
+    Raises:
+        ValueError: If task-level model_settings is not a dictionary.
+    """
+    model: str = task.model or DEFAULT_MODEL
+    model_settings: dict[str, Any] = {}
+    if model in model_keys:
+        if model in models_params:
+            model_settings = models_params[model].copy()
+        model = model_dict[model]
+    task_model_settings: dict[str, Any] | Any = task.model_settings or {}
+    if not isinstance(task_model_settings, dict):
+        raise ValueError(f"model_settings in task {task.name or ''} needs to be a dictionary")
+    model_settings.update(task_model_settings)
+    return model, model_settings
+
+
+async def _build_prompts_to_run(
+    task_prompt: str,
+    repeat_prompt: bool,
+    last_mcp_tool_results: list[str],
+    available_tools: AvailableTools,
+    global_variables: dict[str, Any],
+    inputs: dict[str, Any],
+) -> list[str]:
+    """Build the list of prompts to execute for a task.
+
+    For regular tasks the list contains a single rendered prompt.  When
+    ``repeat_prompt`` is enabled, the last MCP tool result is parsed as an
+    iterable and a prompt is rendered for each element.
+
+    Args:
+        task_prompt: The raw or pre-rendered prompt template string.
+        repeat_prompt: Whether to expand prompts over MCP tool results.
+        last_mcp_tool_results: Mutable list of prior MCP tool result strings.
+        available_tools: Tool registry (passed through to template rendering).
+        global_variables: Global template variables.
+        inputs: Task-level input variables.
+
+    Returns:
+        List of rendered prompt strings to execute.
+
+    Raises:
+        ValueError: If the last MCP result is missing or not valid JSON.
+    """
+    prompts_to_run: list[str] = []
+    if repeat_prompt:
+        if "result" not in task_prompt.lower():
+            logging.warning("repeat_prompt enabled but no {{ result }} in prompt")
+        try:
+            last_result = json.loads(last_mcp_tool_results.pop())
+            text = last_result.get("text", "")
+            try:
+                iterable_result = json.loads(text)
+            except json.JSONDecodeError as exc:
+                logging.critical(f"Could not parse result text: {text}")
+                raise ValueError("Result text is not valid JSON") from exc
+            try:
+                iter(iterable_result)
+            except TypeError:
+                logging.critical("Last MCP tool result is not iterable")
+                raise
+        except IndexError:
+            logging.critical("No last MCP tool result available")
+            raise
+
+        if not iterable_result:
+            await render_model_output("** 🤖❗MCP tool result iterable is empty!\n")
+        else:
+            logging.debug(f"Rendering templated prompts for results: {iterable_result}")
+            for value in iterable_result:
+                try:
+                    rendered_prompt = render_template(
+                        template_str=task_prompt,
+                        available_tools=available_tools,
+                        globals_dict=global_variables,
+                        inputs_dict=inputs,
+                        result_value=value,
+                    )
+                    prompts_to_run.append(rendered_prompt)
+                except jinja2.TemplateError as e:
+                    logging.error(f"Error rendering template for result {value}: {e}")
+                    raise ValueError(f"Template rendering failed: {e}")
+    else:
+        prompts_to_run.append(task_prompt)
+    return prompts_to_run
 
 
 async def deploy_task_agents(
@@ -229,8 +399,8 @@ async def deploy_task_agents(
 
 async def run_main(
     available_tools: AvailableTools,
-    p: str | None,
-    t: str | None,
+    personality_path: str | None,
+    taskflow_path: str | None,
     cli_globals: dict[str, str],
     prompt: str | None,
 ) -> None:
@@ -238,8 +408,8 @@ async def run_main(
 
     Args:
         available_tools: Tool registry.
-        p: Personality module path, or None.
-        t: Taskflow module path, or None.
+        personality_path: Personality module path, or None.
+        taskflow_path: Taskflow module path, or None.
         cli_globals: Global variables from CLI.
         prompt: User prompt text.
     """
@@ -254,18 +424,18 @@ async def run_main(
     async def on_handoff_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], source: Agent[TContext]) -> None:
         await render_model_output(f"\n** 🤖🤝 Agent Handoff: {source.name} -> {agent.name}\n")
 
-    if p:
-        personality = available_tools.get_personality(p)
+    if personality_path:
+        personality = available_tools.get_personality(personality_path)
         await deploy_task_agents(
             available_tools,
-            {p: personality},
+            {personality_path: personality},
             prompt or "",
             run_hooks=TaskRunHooks(on_tool_end=on_tool_end_hook, on_tool_start=on_tool_start_hook),
         )
 
-    if t:
-        taskflow_doc = available_tools.get_taskflow(t)
-        await render_model_output(f"** 🤖💪 Running Task Flow: {t}\n")
+    if taskflow_path:
+        taskflow_doc = available_tools.get_taskflow(taskflow_path)
+        await render_model_output(f"** 🤖💪 Running Task Flow: {taskflow_path}\n")
 
         # Resolve global variables (file defaults + CLI overrides)
         global_variables = dict(taskflow_doc.globals or {})
@@ -275,52 +445,20 @@ async def run_main(
         # Resolve model config
         model_config_ref = taskflow_doc.model_config_ref
         model_keys: list[str] = []
+        model_dict: dict[str, str] = {}
         models_params: dict[str, dict[str, Any]] = {}
         if model_config_ref:
-            m_config = available_tools.get_model_config(model_config_ref)
-            model_dict = m_config.models or {}
-            if model_dict and not isinstance(model_dict, dict):
-                raise ValueError(f"Models section of the model_config file {model_config_ref} must be a dictionary")
-            model_keys = list(model_dict.keys())
-            models_params = m_config.model_settings or {}
-            if models_params and not isinstance(models_params, dict):
-                raise ValueError(f"Settings section of model_config file {model_config_ref} must be a dictionary")
-            if not set(models_params.keys()).difference(model_keys).issubset(set()):
-                raise ValueError(
-                    f"Settings section of model_config file {model_config_ref} contains models not in the model section"
-                )
-            for k, v in models_params.items():
-                if not isinstance(v, dict):
-                    raise ValueError(f"Settings for model {k} in model_config file {model_config_ref} is not a dictionary")
+            model_keys, model_dict, models_params = _resolve_model_config(available_tools, model_config_ref)
 
         for task_wrapper in taskflow_doc.taskflow:
             task = task_wrapper.task
 
             # Reusable taskflow support: merge parent defaults into current task
             if task.uses:
-                reusable_doc = available_tools.get_taskflow(task.uses)
-                if reusable_doc is None:
-                    raise ValueError(f"No such reusable taskflow: {task.uses}")
-                if len(reusable_doc.taskflow) > 1:
-                    raise ValueError("Reusable taskflows can only contain 1 task")
-                # Merge: parent fields fill in where current task has defaults
-                parent_task = reusable_doc.taskflow[0].task
-                merged = parent_task.model_dump(by_alias=True, exclude_defaults=True)
-                current = task.model_dump(by_alias=True, exclude_defaults=True)
-                merged.update(current)  # current task overrides parent
-                task = TaskDefinition.model_validate(merged)
+                task = _merge_reusable_task(available_tools, task)
 
             # Resolve model
-            model = task.model or DEFAULT_MODEL
-            model_settings: dict[str, Any] = {}
-            if model in model_keys:
-                if model in models_params:
-                    model_settings = models_params[model].copy()
-                model = model_dict[model]
-            task_model_settings = task.model_settings or {}
-            if not isinstance(task_model_settings, dict):
-                raise ValueError(f"model_settings in task {task.name or ''} needs to be a dictionary")
-            model_settings.update(task_model_settings)
+            model, model_settings = _resolve_task_model(task, model_keys, model_dict, models_params)
 
             # Read task fields via typed attributes
             agents_list = task.agents or []
@@ -351,49 +489,13 @@ async def run_main(
                     )
                 except jinja2.TemplateError as e:
                     logging.error(f"Template rendering error: {e}")
-                    raise ValueError(f"Failed to render prompt template: {e}")
+                    raise ValueError(f"Failed to render prompt template: {e}") from e
 
             with TmpEnv(env):
-                prompts_to_run: list[str] = []
-                if repeat_prompt:
-                    if "result" not in task_prompt.lower():
-                        logging.warning("repeat_prompt enabled but no {{ result }} in prompt")
-                    try:
-                        last_result = json.loads(last_mcp_tool_results.pop())
-                        text = last_result.get("text", "")
-                        try:
-                            iterable_result = json.loads(text)
-                        except json.JSONDecodeError as exc:
-                            logging.critical(f"Could not parse result text: {text}")
-                            raise ValueError("Result text is not valid JSON") from exc
-                        try:
-                            iter(iterable_result)
-                        except TypeError:
-                            logging.critical("Last MCP tool result is not iterable")
-                            raise
-                    except IndexError:
-                        logging.critical("No last MCP tool result available")
-                        raise
-
-                    if not iterable_result:
-                        await render_model_output("** 🤖❗MCP tool result iterable is empty!\n")
-                    else:
-                        logging.debug(f"Rendering templated prompts for results: {iterable_result}")
-                        for value in iterable_result:
-                            try:
-                                rendered_prompt = render_template(
-                                    template_str=task_prompt,
-                                    available_tools=available_tools,
-                                    globals_dict=global_variables,
-                                    inputs_dict=inputs,
-                                    result_value=value,
-                                )
-                                prompts_to_run.append(rendered_prompt)
-                            except jinja2.TemplateError as e:
-                                logging.error(f"Error rendering template for result {value}: {e}")
-                                raise ValueError(f"Template rendering failed: {e}")
-                else:
-                    prompts_to_run.append(task_prompt)
+                prompts_to_run: list[str] = await _build_prompts_to_run(
+                    task_prompt, repeat_prompt, last_mcp_tool_results,
+                    available_tools, global_variables, inputs,
+                )
 
                 async def run_prompts(async_task: bool = False, max_concurrent_tasks: int = 5) -> bool:
                     if run:
@@ -414,7 +516,7 @@ async def run_main(
                         resolved_agents: dict[str, Any] = {}
                         current_agents = list(agents_list)
                         if not current_agents:
-                            from .cli import parse_prompt_args
+                            from .prompt_parser import parse_prompt_args
                             p_val, _, _, _, p_prompt, _ = parse_prompt_args(available_tools, p_prompt)
                             if p_val:
                                 current_agents.append(p_val)

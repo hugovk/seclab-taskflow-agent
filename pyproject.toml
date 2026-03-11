@@ -9,7 +9,15 @@ description = "A taskflow agent for the SecLab project, enabling secure and auto
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
-keywords = []
+keywords = [
+  "agentic-workflows",
+  "mcp",
+  "security-research",
+  "taskflow",
+  "yaml",
+  "pydantic",
+  "openai-agents",
+]
 authors = [
   { name = "GitHub Security Lab", email = "securitylab@github.com" },
 ]
@@ -19,8 +27,12 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: Implementation :: CPython",
   "Programming Language :: Python :: Implementation :: PyPy",
+  "Intended Audience :: Developers",
+  "Topic :: Security",
+  "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
   "aiofiles==24.1.0",

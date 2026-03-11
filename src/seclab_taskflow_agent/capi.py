@@ -17,10 +17,8 @@ class AI_API_ENDPOINT_ENUM(StrEnum):
     AI_API_GITHUBCOPILOT = "api.githubcopilot.com"
     AI_API_OPENAI = "api.openai.com"
 
-    def to_url(self):
-        """
-        Convert the endpoint to its full URL.
-        """
+    def to_url(self) -> str:
+        """Convert the endpoint to its full URL."""
         match self:
             case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
                 return f"https://{self}"
@@ -39,17 +37,14 @@ COPILOT_INTEGRATION_ID = "vscode-chat"
 # but beware that your taskflows need to reference the correct model id
 # since different APIs use their own id schema, use -l with your desired
 # endpoint to retrieve the correct id names to use for your taskflow
-def get_AI_endpoint():
+def get_AI_endpoint() -> str:
+    """Return the configured AI API endpoint URL."""
     return os.getenv("AI_API_ENDPOINT", default="https://models.github.ai/inference")
 
 
-def get_AI_token():
-    """
-    Get the token for the AI API from the environment.
-    The environment variable can be named either AI_API_TOKEN
-    or COPILOT_TOKEN.
-    """
-    token = os.getenv("AI_API_TOKEN")
+def get_AI_token() -> str:
+    """Get the AI API token from AI_API_TOKEN or COPILOT_TOKEN env vars."""
+    token: str | None = os.getenv("AI_API_TOKEN")
     if token:
         return token
     token = os.getenv("COPILOT_TOKEN")
@@ -105,7 +100,8 @@ def list_capi_models(token: str) -> dict[str, dict]:
     return models
 
 
-def supports_tool_calls(model: str, models: dict) -> bool:
+def supports_tool_calls(model: str, models: dict[str, dict]) -> bool:
+    """Check whether the given model supports tool calls."""
     api_endpoint = get_AI_endpoint()
     match urlparse(api_endpoint).netloc:
         case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
@@ -129,8 +125,9 @@ def supports_tool_calls(model: str, models: dict) -> bool:
 
 
 def list_tool_call_models(token: str) -> dict[str, dict]:
+    """Return only models that support tool calls."""
     models = list_capi_models(token)
-    tool_models = {}
+    tool_models: dict[str, dict] = {}
     for model in models:
         if supports_tool_calls(model, models) is True:
             tool_models[model] = models[model]

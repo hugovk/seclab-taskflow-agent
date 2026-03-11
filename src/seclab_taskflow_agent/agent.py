@@ -46,15 +46,17 @@ match urlparse(api_endpoint).netloc:
 DEFAULT_MODEL = os.getenv("COPILOT_DEFAULT_MODEL", default=default_model)
 
 
-# Run hooks monitor the entire lifetime of a runner, including across any Agent handoffs
 class TaskRunHooks(RunHooks):
+    """RunHooks that monitor the entire lifetime of a runner, including across Agent handoffs."""
+
     def __init__(
         self,
         on_agent_start: Callable | None = None,
         on_agent_end: Callable | None = None,
         on_tool_start: Callable | None = None,
         on_tool_end: Callable | None = None,
-    ):
+    ) -> None:
+        """Initialize with optional callback functions for each lifecycle event."""
         self._on_agent_start = on_agent_start
         self._on_agent_end = on_agent_end
         self._on_tool_start = on_tool_start
@@ -83,8 +85,9 @@ class TaskRunHooks(RunHooks):
             await self._on_tool_end(context, agent, tool, result)
 
 
-# Agent hooks monitor the lifetime of a single agent, not across any Agent handoffs
 class TaskAgentHooks(AgentHooks):
+    """AgentHooks that monitor the lifetime of a single agent, not across Agent handoffs."""
+
     def __init__(
         self,
         on_handoff: Callable | None = None,
@@ -92,7 +95,8 @@ class TaskAgentHooks(AgentHooks):
         on_end: Callable | None = None,
         on_tool_start: Callable | None = None,
         on_tool_end: Callable | None = None,
-    ):
+    ) -> None:
+        """Initialize with optional callback functions for each lifecycle event."""
         self._on_handoff = on_handoff
         self._on_start = on_start
         self._on_end = on_end
@@ -130,18 +134,25 @@ class TaskAgentHooks(AgentHooks):
 
 
 class TaskAgent:
+    """High-level wrapper around the OpenAI Agent SDK.
+
+    Configures the OpenAI client, creates an Agent with the given tools and
+    model, and exposes ``run`` / ``run_streamed`` entry points.
+    """
+
     def __init__(
         self,
         name: str = "TaskAgent",
         instructions: str = "",
-        handoffs: list = [],
+        handoffs: list[Any] = [],
         exclude_from_context: bool = False,
-        mcp_servers: dict = [],
+        mcp_servers: list[Any] = [],
         model: str = DEFAULT_MODEL,
         model_settings: ModelSettings | None = None,
         run_hooks: TaskRunHooks | None = None,
         agent_hooks: TaskAgentHooks | None = None,
-    ):
+    ) -> None:
+        """Create a TaskAgent with the specified configuration."""
         client = AsyncOpenAI(
             base_url=api_endpoint,
             api_key=get_AI_token(),
@@ -174,7 +185,9 @@ class TaskAgent:
         )
 
     async def run(self, prompt: str, max_turns: int = DEFAULT_MAX_TURNS) -> result.RunResult:
+        """Run the agent to completion and return the result."""
         return await Runner.run(starting_agent=self.agent, input=prompt, max_turns=max_turns, hooks=self.run_hooks)
 
     def run_streamed(self, prompt: str, max_turns: int = DEFAULT_MAX_TURNS) -> result.RunResultStreaming:
+        """Run the agent with streaming output."""
         return Runner.run_streamed(starting_agent=self.agent, input=prompt, max_turns=max_turns, hooks=self.run_hooks)

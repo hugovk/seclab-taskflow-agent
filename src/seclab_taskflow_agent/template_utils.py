@@ -4,14 +4,18 @@
 """Jinja2 template utilities for taskflow template rendering."""
 
 import os
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
+
 import jinja2
-from typing import Any, Dict, Optional
+
+if TYPE_CHECKING:
+    from .available_tools import AvailableTools
 
 
 class PromptLoader(jinja2.BaseLoader):
     """Custom Jinja2 loader for reusable prompts."""
 
-    def __init__(self, available_tools):
+    def __init__(self, available_tools: "AvailableTools") -> None:
         """Initialize the prompt loader.
 
         Args:
@@ -19,7 +23,9 @@ class PromptLoader(jinja2.BaseLoader):
         """
         self.available_tools = available_tools
 
-    def get_source(self, environment, template):
+    def get_source(
+        self, environment: jinja2.Environment, template: str
+    ) -> tuple[str, str | None, Callable[[], bool]]:
         """Load prompt from available_tools by path.
 
         Args:
@@ -69,7 +75,7 @@ def env_function(var_name: str, default: Optional[str] = None, required: bool = 
     return value or ""
 
 
-def create_jinja_environment(available_tools) -> jinja2.Environment:
+def create_jinja_environment(available_tools: "AvailableTools") -> jinja2.Environment:
     """Create configured Jinja2 environment for taskflow templates.
 
     Args:
@@ -102,7 +108,7 @@ def create_jinja_environment(available_tools) -> jinja2.Environment:
 
 def render_template(
     template_str: str,
-    available_tools,
+    available_tools: "AvailableTools",
     globals_dict: Optional[Dict[str, Any]] = None,
     inputs_dict: Optional[Dict[str, Any]] = None,
     result_value: Optional[Any] = None,
