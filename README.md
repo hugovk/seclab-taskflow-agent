@@ -115,6 +115,19 @@ Error: [BadRequestError] model 'foo' not found
 python -m seclab_taskflow_agent --debug -t examples.taskflows.echo
 ```
 
+### MCP Environment Denylist
+
+By default, MCP server subprocesses inherit the parent environment. To prevent
+specific variables from leaking to MCP servers, set `TASKFLOW_ENV_DENYLIST` to
+a comma-separated list of variable names:
+
+```bash
+export TASKFLOW_ENV_DENYLIST="MY_SECRET_TOKEN,PRIVATE_KEY,OTHER_CREDENTIAL"
+```
+
+Toolbox-level `env:` declarations in YAML still inject exactly what each server
+needs, so explicitly configured variables are unaffected.
+
 ## Use Cases and Examples
 
 The Seclab Taskflow Agent framework was primarily designed to fit the iterative feedback loop driven work involved in Agentic security research workflows and vulnerability triage tasks.

@@ -18,6 +18,7 @@ __all__ = [
     "AsyncDebugMCPServerStdio",
     "ReconnectingMCPServerStdio",
     "StreamableMCPThread",
+    "_filtered_env",
 ]
 
 import asyncio
@@ -36,6 +37,21 @@ from agents.mcp import MCPServerStdio
 
 # Exit codes that are considered normal termination.
 _EXPECTED_EXIT_CODES: frozenset[int] = frozenset({0, -signal.SIGTERM})
+
+
+def _filtered_env() -> dict[str, str]:
+    """Return a copy of ``os.environ`` with denied variables removed.
+
+    Set ``TASKFLOW_ENV_DENYLIST`` to a comma-separated list of variable
+    names that should not be forwarded to MCP server subprocesses.
+    Toolbox-level ``env:`` declarations in YAML still inject what each
+    server explicitly needs.
+    """
+    denylist_raw = os.environ.get("TASKFLOW_ENV_DENYLIST", "")
+    if not denylist_raw:
+        return os.environ.copy()
+    denied = {k.strip() for k in denylist_raw.split(",") if k.strip()}
+    return {k: v for k, v in os.environ.items() if k not in denied}
 
 
 class StreamableMCPThread(Thread):
@@ -68,7 +84,7 @@ class StreamableMCPThread(Thread):
         self.on_output: Callable[[str], None] | None = on_output
         self.on_error: Callable[[str], None] | None = on_error
         self.poll_interval: float = poll_interval
-        self.env: dict[str, str] = os.environ.copy()  # XXX: potential for environment leak to MCP
+        self.env: dict[str, str] = _filtered_env()
         if env:
             self.env.update(env)
         self._stop_event: Event = Event()
