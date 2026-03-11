@@ -18,6 +18,7 @@ Architecture
 - :mod:`~seclab_taskflow_agent.mcp_utils` — MCP client parameter resolution
 - :mod:`~seclab_taskflow_agent.mcp_transport` — MCP transport implementations
 - :mod:`~seclab_taskflow_agent.mcp_prompt` — System prompt construction
+- :mod:`~seclab_taskflow_agent.session` — Taskflow checkpoint / resume
 - :mod:`~seclab_taskflow_agent.template_utils` — Jinja2 template rendering
 - :mod:`~seclab_taskflow_agent.prompt_parser` — Legacy prompt argument parser
 """

@@ -102,6 +102,10 @@ def main(
         bool,
         typer.Option("-d", "--debug", help="Show full tracebacks on errors."),
     ] = False,
+    resume: Annotated[
+        str | None,
+        typer.Option("--resume", help="Resume a previous session by its ID."),
+    ] = None,
     prompt: Annotated[
         list[str] | None,
         typer.Argument(help="Remaining prompt text."),
@@ -111,7 +115,11 @@ def main(
     # Debug mode from flag or env var
     debug = debug or bool(os.getenv("TASK_AGENT_DEBUG"))
 
-    # Validate mutual exclusivity
+    # Validate mutual exclusivity (resume is standalone)
+    if resume and (personality or taskflow or list_models):
+        typer.echo("Error: --resume cannot be combined with -p, -t, or -l.", err=True)
+        raise typer.Exit(code=1)
+
     specified = sum(bool(x) for x in [personality, taskflow, list_models])
     if specified > 1:
         typer.echo("Error: -p, -t, and -l are mutually exclusive.", err=True)
@@ -128,8 +136,8 @@ def main(
             typer.echo(model)
         raise typer.Exit()
 
-    if personality is None and taskflow is None:
-        typer.echo("Error: one of -p or -t is required.", err=True)
+    if personality is None and taskflow is None and resume is None:
+        typer.echo("Error: one of -p, -t, or --resume is required.", err=True)
         raise typer.Exit(code=1)
 
     # Parse global variables
@@ -144,9 +152,15 @@ def main(
 
     from .runner import run_main
 
+    # When resuming, the session carries taskflow_path/globals/prompt
+    effective_taskflow = taskflow if not resume else None
+
     try:
         asyncio.run(
-            run_main(available_tools, personality, taskflow, cli_globals, user_prompt),
+            run_main(
+                available_tools, personality, effective_taskflow,
+                cli_globals, user_prompt, resume_session_id=resume,
+            ),
             debug=debug,
         )
     except KeyboardInterrupt:

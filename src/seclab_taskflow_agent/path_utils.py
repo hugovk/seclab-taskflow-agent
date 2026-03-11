@@ -1,10 +1,30 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
+"""Platform-aware data and log directory resolution."""
+
 import os
 from pathlib import Path
 
 import platformdirs
+
+__all__ = [
+    "log_dir",
+    "log_file",
+    "log_file_name",
+    "mcp_data_dir",
+]
+
+
+def _data_dir() -> Path:
+    """Return the top-level application data directory (created if needed)."""
+    return Path(
+        platformdirs.user_data_dir(
+            appname="seclab-taskflow-agent",
+            appauthor="GitHubSecurityLab",
+            ensure_exists=True,
+        )
+    )
 
 
 def mcp_data_dir(packagename: str, mcpname: str, env_override: str | None) -> Path:
@@ -23,10 +43,8 @@ def mcp_data_dir(packagename: str, mcpname: str, env_override: str | None) -> Pa
         p = os.getenv(env_override)
         if p:
             return Path(p)
-    # Use [platformdirs](https://pypi.org/project/platformdirs/) to
-    # choose an appropriate location.
-    d = platformdirs.user_data_dir(appname="seclab-taskflow-agent", appauthor="GitHubSecurityLab", ensure_exists=True)
     # Each MCP server gets its own sub-directory
+    d = _data_dir()
     p = Path(d).joinpath(packagename).joinpath(mcpname)
     p.mkdir(parents=True, exist_ok=True)
     return p

@@ -49,6 +49,8 @@ DEFAULT_MAX_TURNS = 50  # Maximum agent turns before forced termination
 RATE_LIMIT_BACKOFF = 5  # Initial backoff in seconds after a rate-limit response
 MAX_RATE_LIMIT_BACKOFF = 120  # Maximum backoff cap in seconds for rate-limit retries
 MAX_API_RETRY = 5  # Maximum number of consecutive API error retries
+TASK_RETRY_LIMIT = 3  # Maximum retry attempts for a failed task
+TASK_RETRY_BACKOFF = 10  # Initial backoff in seconds between task retries
 
 
 def _resolve_model_config(
@@ -442,6 +444,7 @@ async def run_main(
     taskflow_path: str | None,
     cli_globals: dict[str, str],
     prompt: str | None,
+    resume_session_id: str | None = None,
 ) -> None:
     """Main entry point for taskflow/personality execution.
 
@@ -451,7 +454,10 @@ async def run_main(
         taskflow_path: Taskflow module path, or None.
         cli_globals: Global variables from CLI.
         prompt: User prompt text.
+        resume_session_id: Session ID to resume from a checkpoint.
     """
+    from .session import TaskflowSession
+
     last_mcp_tool_results: list[str] = []
 
     async def on_tool_end_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool, result: str) -> None:
@@ -472,7 +478,22 @@ async def run_main(
             run_hooks=TaskRunHooks(on_tool_end=on_tool_end_hook, on_tool_start=on_tool_start_hook),
         )
 
-    if taskflow_path:
+    if taskflow_path or resume_session_id:
+        # Handle session resume
+        session: TaskflowSession | None = None
+        if resume_session_id:
+            session = TaskflowSession.load(resume_session_id)
+            if session.finished:
+                await render_model_output(f"** 🤖✅ Session {resume_session_id} already completed\n")
+                return
+            taskflow_path = session.taskflow_path
+            cli_globals = session.cli_globals
+            prompt = session.prompt
+            last_mcp_tool_results = list(session.last_tool_results)
+            await render_model_output(
+                f"** 🤖🔄 Resuming session {resume_session_id} from task {session.next_task_index}\n"
+            )
+
         taskflow_doc = available_tools.get_taskflow(taskflow_path)
         await render_model_output(f"** 🤖💪 Running Task Flow: {taskflow_path}\n")
 
@@ -490,7 +511,25 @@ async def run_main(
         if model_config_ref:
             model_keys, model_dict, models_params, api_type = _resolve_model_config(available_tools, model_config_ref)
 
-        for task_wrapper in taskflow_doc.taskflow:
+        # Create session if this is a new run (not personality mode)
+        if session is None:
+            session = TaskflowSession(
+                taskflow_path=taskflow_path,
+                cli_globals=cli_globals,
+                prompt=prompt or "",
+                total_tasks=len(taskflow_doc.taskflow),
+            )
+            session.save()
+            await render_model_output(f"** 🤖📋 Session: {session.session_id}\n")
+
+        for task_index, task_wrapper in enumerate(taskflow_doc.taskflow):
+            # Skip already-completed tasks on resume
+            if task_index < session.next_task_index:
+                await render_model_output(
+                    f"** 🤖⏭️ Skipping completed task {task_index}\n"
+                )
+                continue
+
             task = task_wrapper.task
 
             # Reusable taskflow support: merge parent defaults into current task
@@ -610,9 +649,63 @@ async def run_main(
                         complete = result and complete
                     return complete
 
-                task_complete = await run_prompts(async_task=async_task, max_concurrent_tasks=max_concurrent_tasks)
+                # Execute the task with auto-retry on failure
+                task_name = task.name or f"task-{task_index}"
+                task_complete = False
+                last_task_error: BaseException | None = None
+
+                for attempt in range(TASK_RETRY_LIMIT):
+                    try:
+                        task_complete = await run_prompts(
+                            async_task=async_task,
+                            max_concurrent_tasks=max_concurrent_tasks,
+                        )
+                        last_task_error = None
+                        break
+                    except (KeyboardInterrupt, SystemExit):
+                        raise
+                    except Exception as exc:
+                        last_task_error = exc
+                        remaining = TASK_RETRY_LIMIT - attempt - 1
+                        if remaining > 0:
+                            backoff = TASK_RETRY_BACKOFF * (attempt + 1)
+                            await render_model_output(
+                                f"** 🤖🔄 Task {task_name!r} failed: {exc}\n"
+                                f"** 🤖🔄 Retrying in {backoff}s ({remaining} attempts left)\n"
+                            )
+                            logging.warning(f"Task {task_name!r} attempt {attempt + 1} failed: {exc}")
+                            await asyncio.sleep(backoff)
+                        else:
+                            logging.error(f"Task {task_name!r} failed after {TASK_RETRY_LIMIT} attempts: {exc}")
+
+                # If all retries exhausted with an exception, save and re-raise
+                if last_task_error is not None:
+                    session.mark_failed(f"Task {task_name!r}: {last_task_error}")
+                    await render_model_output(
+                        f"** 🤖💾 Session saved: {session.session_id}\n"
+                        f"** 🤖💡 Resume with: --resume {session.session_id}\n"
+                    )
+                    raise last_task_error
+
+                # Checkpoint after successful task
+                session.record_task(
+                    index=task_index,
+                    name=task_name,
+                    success=task_complete,
+                    tool_results=list(last_mcp_tool_results),
+                )
 
                 if must_complete and not task_complete:
                     logging.critical("Required task not completed ... aborting!")
                     await render_model_output("🤖💥 *Required task not completed ...\n")
+                    session.mark_failed(f"Required task {task_name!r} did not complete")
+                    await render_model_output(
+                        f"** 🤖💾 Session saved: {session.session_id}\n"
+                        f"** 🤖💡 Resume with: --resume {session.session_id}\n"
+                    )
                     break
+
+        # All tasks completed successfully
+        if session is not None and not session.error:
+            session.mark_finished()
+            await render_model_output(f"** 🤖✅ Session {session.session_id} completed\n")
