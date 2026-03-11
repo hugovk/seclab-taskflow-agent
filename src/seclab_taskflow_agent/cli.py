@@ -15,6 +15,7 @@ __all__ = ["app", "main"]
 import asyncio
 import logging
 import os
+import traceback
 from typing import Annotated
 
 import typer
@@ -61,6 +62,24 @@ def _setup_logging() -> None:
     root.addHandler(console_handler)
 
 
+def _print_concise_error(exc: BaseException) -> None:
+    """Print a concise error chain without full tracebacks.
+
+    Walks the exception cause chain and prints each error on a single
+    line.  Use ``--debug`` or ``TASK_AGENT_DEBUG=1`` for full tracebacks.
+    """
+    import typer
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current and id(current) not in seen:
+        seen.add(id(current))
+        label = type(current).__qualname__
+        typer.echo(f"Error: [{label}] {current}", err=True)
+        current = current.__cause__ or current.__context__
+    typer.echo("(use --debug for full traceback)", err=True)
+
+
 @app.command()
 def main(
     personality: Annotated[
@@ -79,12 +98,19 @@ def main(
         list[str] | None,
         typer.Option("-g", "--global", help="Global variable as KEY=VALUE. Repeatable."),
     ] = None,
+    debug: Annotated[
+        bool,
+        typer.Option("-d", "--debug", help="Show full tracebacks on errors."),
+    ] = False,
     prompt: Annotated[
         list[str] | None,
         typer.Argument(help="Remaining prompt text."),
     ] = None,
 ) -> None:
     """Run a taskflow or personality-based agent session."""
+    # Debug mode from flag or env var
+    debug = debug or bool(os.getenv("TASK_AGENT_DEBUG"))
+
     # Validate mutual exclusivity
     specified = sum(bool(x) for x in [personality, taskflow, list_models])
     if specified > 1:
@@ -118,10 +144,20 @@ def main(
 
     from .runner import run_main
 
-    asyncio.run(
-        run_main(available_tools, personality, taskflow, cli_globals, user_prompt),
-        debug=os.getenv("TASK_AGENT_LOGLEVEL", "").upper() == "DEBUG",
-    )
+    try:
+        asyncio.run(
+            run_main(available_tools, personality, taskflow, cli_globals, user_prompt),
+            debug=debug,
+        )
+    except KeyboardInterrupt:
+        typer.echo("\nInterrupted.", err=True)
+        raise typer.Exit(code=130)
+    except Exception as exc:
+        if debug:
+            traceback.print_exc()
+        else:
+            _print_concise_error(exc)
+        raise typer.Exit(code=1)
 
 
 # ---------------------------------------------------------------------------
