@@ -10,9 +10,12 @@ while maintaining full backwards compatibility with existing YAML files.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+# Valid API type values for model configuration.
+ApiType = Literal["chat_completions", "responses"]
 
 
 # ---------------------------------------------------------------------------
@@ -174,11 +177,16 @@ class ToolboxDocument(BaseModel):
 
 
 class ModelConfigDocument(BaseModel):
-    """A model_config YAML document mapping logical model names to provider IDs."""
+    """A model_config YAML document mapping logical model names to provider IDs.
+
+    The ``api_type`` field controls which OpenAI API is used for all models
+    in this config: ``"chat_completions"`` (default) or ``"responses"``.
+    """
 
     model_config = ConfigDict(extra="allow")
 
     header: TaskflowHeader = Field(alias="seclab-taskflow-agent")
+    api_type: ApiType = "chat_completions"
     models: dict[str, str] = Field(default_factory=dict)
     model_settings: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

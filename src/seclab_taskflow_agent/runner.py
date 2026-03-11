@@ -45,7 +45,7 @@ MAX_API_RETRY = 5  # Maximum number of consecutive API error retries
 def _resolve_model_config(
     available_tools: AvailableTools,
     model_config_ref: str,
-) -> tuple[list[str], dict[str, str], dict[str, dict[str, Any]]]:
+) -> tuple[list[str], dict[str, str], dict[str, dict[str, Any]], str]:
     """Load and validate the model configuration file.
 
     Args:
@@ -53,9 +53,10 @@ def _resolve_model_config(
         model_config_ref: Reference name for the model config document.
 
     Returns:
-        A tuple of (model_keys, model_dict, models_params) where model_keys is
-        the list of logical model names, model_dict maps them to provider model
-        IDs, and models_params holds per-model settings.
+        A tuple of (model_keys, model_dict, models_params, api_type) where
+        model_keys is the list of logical model names, model_dict maps them
+        to provider model IDs, models_params holds per-model settings, and
+        api_type is ``"chat_completions"`` or ``"responses"``.
 
     Raises:
         ValueError: If the config file has structural problems.
@@ -75,7 +76,7 @@ def _resolve_model_config(
     for k, v in models_params.items():
         if not isinstance(v, dict):
             raise ValueError(f"Settings for model {k} in model_config file {model_config_ref} is not a dictionary")
-    return model_keys, model_dict, models_params
+    return model_keys, model_dict, models_params, m_config.api_type
 
 
 def _merge_reusable_task(
@@ -224,6 +225,7 @@ async def deploy_task_agents(
     max_turns: int = DEFAULT_MAX_TURNS,
     model: str = DEFAULT_MODEL,
     model_par: dict[str, Any] | None = None,
+    api_type: str = "chat_completions",
     run_hooks: TaskRunHooks | None = None,
     agent_hooks: TaskAgentHooks | None = None,
 ) -> bool:
@@ -231,8 +233,9 @@ async def deploy_task_agents(
 
     Args:
         available_tools: Tool registry.
-        agents: Mapping of agent name → PersonalityDocument.
+        agents: Mapping of agent name -> PersonalityDocument.
         prompt: User prompt to execute.
+        api_type: OpenAI API type -- ``"chat_completions"`` or ``"responses"``.
 
     Returns:
         True if the task completed successfully.
@@ -308,6 +311,7 @@ async def deploy_task_agents(
                     mcp_servers=[e.server for e in entries],
                     model=model,
                     model_settings=model_settings,
+                    api_type=api_type,
                     run_hooks=run_hooks,
                     agent_hooks=agent_hooks,
                 ).agent
@@ -330,6 +334,7 @@ async def deploy_task_agents(
             mcp_servers=[e.server for e in entries],
             model=model,
             model_settings=model_settings,
+            api_type=api_type,
             run_hooks=run_hooks,
             agent_hooks=agent_hooks,
         )
@@ -447,8 +452,9 @@ async def run_main(
         model_keys: list[str] = []
         model_dict: dict[str, str] = {}
         models_params: dict[str, dict[str, Any]] = {}
+        api_type: str = "chat_completions"
         if model_config_ref:
-            model_keys, model_dict, models_params = _resolve_model_config(available_tools, model_config_ref)
+            model_keys, model_dict, models_params, api_type = _resolve_model_config(available_tools, model_config_ref)
 
         for task_wrapper in taskflow_doc.taskflow:
             task = task_wrapper.task
@@ -543,6 +549,7 @@ async def run_main(
                                     ),
                                     model=model,
                                     model_par=model_settings,
+                                    api_type=api_type,
                                     agent_hooks=TaskAgentHooks(on_handoff=on_handoff_hook),
                                 )
 

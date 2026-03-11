@@ -12,6 +12,7 @@ from agents import (
     Agent,
     AgentHooks,
     OpenAIChatCompletionsModel,
+    OpenAIResponsesModel,
     RunContextWrapper,
     RunHooks,
     Runner,
@@ -149,19 +150,22 @@ class TaskAgent:
         mcp_servers: list[Any] = [],
         model: str = DEFAULT_MODEL,
         model_settings: ModelSettings | None = None,
+        api_type: str = "chat_completions",
         run_hooks: TaskRunHooks | None = None,
         agent_hooks: TaskAgentHooks | None = None,
     ) -> None:
-        """Create a TaskAgent with the specified configuration."""
+        """Create a TaskAgent with the specified configuration.
+
+        Args:
+            api_type: OpenAI API type -- ``"chat_completions"`` or ``"responses"``.
+        """
         client = AsyncOpenAI(
             base_url=api_endpoint,
             api_key=get_AI_token(),
             default_headers={"Copilot-Integration-Id": COPILOT_INTEGRATION_ID},
         )
         set_default_openai_client(client)
-        # CAPI does not yet support the Responses API: https://github.com/github/copilot-api/issues/11185
-        # as such we are implementing on chat completions for now
-        set_default_openai_api("chat_completions")
+        set_default_openai_api(api_type)
         set_tracing_disabled(True)
         self.run_hooks = run_hooks or TaskRunHooks()
         # useful agent patterns:
@@ -173,11 +177,17 @@ class TaskAgent:
         ) -> ToolsToFinalOutputResult:
             return ToolsToFinalOutputResult(True, "Excluding tool results from LLM context")
 
+        # Select model class based on api_type
+        if api_type == "responses":
+            model_impl = OpenAIResponsesModel(model=model, openai_client=client)
+        else:
+            model_impl = OpenAIChatCompletionsModel(model=model, openai_client=client)
+
         self.agent = Agent(
             name=name,
             instructions=instructions,
             tool_use_behavior=_ToolsToFinalOutputFunction if exclude_from_context else "run_llm_again",
-            model=OpenAIChatCompletionsModel(model=model, openai_client=client),
+            model=model_impl,
             handoffs=handoffs,
             mcp_servers=mcp_servers,
             model_settings=model_settings or ModelSettings(),

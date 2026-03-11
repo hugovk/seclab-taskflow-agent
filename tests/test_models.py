@@ -199,6 +199,27 @@ class TestModelConfigDocument:
         doc = ModelConfigDocument(**data)
         assert doc.models["gpt_default"] == "gpt-4.1"
         assert doc.model_settings["gpt_default"]["temperature"] == 0.7
+        assert doc.api_type == "chat_completions"  # default
+
+    def test_api_type_responses(self):
+        """Test that api_type can be set to 'responses'."""
+        data = {
+            "seclab-taskflow-agent": {"version": "1.0", "filetype": "model_config"},
+            "api_type": "responses",
+            "models": {"o3": "o3"},
+        }
+        doc = ModelConfigDocument(**data)
+        assert doc.api_type == "responses"
+
+    def test_api_type_invalid(self):
+        """Test that invalid api_type values are rejected."""
+        data = {
+            "seclab-taskflow-agent": {"version": "1.0", "filetype": "model_config"},
+            "api_type": "invalid",
+            "models": {},
+        }
+        with pytest.raises(ValidationError):
+            ModelConfigDocument(**data)
 
 
 class TestPromptDocument:

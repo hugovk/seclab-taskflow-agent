@@ -23,6 +23,7 @@ Architecture
 """
 
 __all__ = [
+    "ApiType",
     "AvailableTools",
     "TaskAgent",
     "TaskRunHooks",
@@ -38,6 +39,7 @@ __all__ = [
 from .agent import TaskAgent, TaskAgentHooks, TaskRunHooks
 from .available_tools import AvailableTools
 from .models import (
+    ApiType,
     ModelConfigDocument,
     PersonalityDocument,
     PromptDocument,
