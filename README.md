@@ -1,8 +1,11 @@
 # GitHub Security Lab Taskflow Agent
 
-The Security Lab Taskflow Agent is an MCP enabled multi-Agent framework.
+The Security Lab Taskflow Agent is an MCP-enabled multi-Agent framework for
+declarative, YAML-driven agentic workflows.
 
-The Taskflow Agent is built on top of the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/).
+Built on top of the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/),
+it uses [Pydantic](https://docs.pydantic.dev/) for grammar validation and
+[Jinja2](https://jinja.palletsprojects.com/) for template rendering.
 
 ## Core Concepts
 
@@ -15,6 +18,39 @@ Agents are defined through [personalities](examples/personalities/), that receiv
 Agents can cooperate to complete sequences of tasks through so-called [taskflows](doc/GRAMMAR.md).
 
 You can find a detailed overview of the taskflow grammar [here](doc/GRAMMAR.md) and example taskflows [here](examples/taskflows/).
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   CLI (cli.py)                      │
+│  Typer-based entry point: -p, -t, -l, -g KEY=VALUE │
+└─────────────────────┬───────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────┐
+│              Runner (runner.py)                      │
+│  Taskflow execution loop, model resolution,          │
+│  template rendering, repeat-prompt iteration         │
+└─────────────────────┬───────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────┐
+│          MCP Lifecycle (mcp_lifecycle.py)            │
+│  Server connection, cleanup, process management      │
+└─────────────────────┬───────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────┐
+│            Agent (agent.py)                          │
+│  TaskAgent wrapper, hooks, OpenAI Agents SDK bridge  │
+└─────────────────────────────────────────────────────┘
+
+Supporting modules:
+  models.py        — Pydantic v2 grammar models (validation)
+  available_tools.py — YAML resource loader with caching
+  template_utils.py  — Jinja2 template environment
+  mcp_utils.py       — MCP namespace wrapping, system prompts
+  capi.py            — AI API endpoint management
+  path_utils.py      — Platform-aware data/log directories
+```
 
 ## Use Cases and Examples
 

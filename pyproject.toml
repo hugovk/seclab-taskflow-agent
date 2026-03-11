@@ -108,6 +108,9 @@ dependencies = [
   "zipp==3.23.0",
 ]
 
+[project.scripts]
+seclab-taskflow-agent = "seclab_taskflow_agent.cli:app"
+
 [project.urls]
 Source = "https://github.com/GitHubSecurityLab/seclab-taskflow-agent"
 Issues = "https://github.com/GitHubSecurityLab/seclab-taskflow-agent/issues"
@@ -150,86 +153,39 @@ exclude_lines = [
 target-version = "py310"
 
 [tool.ruff.lint]
-# Suppress all current linter errors to establish a baseline
+# Project-wide style choices and pragmatic suppressions.
+# Rules removed from the original baseline are now enforced.
 ignore = [
-  "A001",     # Variable shadows built-in
-  "A002",     # Argument shadows built-in
-  "A004",     # Import shadows built-in
-  "ARG001",   # Unused function argument
-  "B006",     # Mutable default argument
-  "B007",     # Unused loop control variable
-  "B008",     # Function call in argument defaults
-  "B023",     # Function uses loop variable
-  "B904",     # raise-without-from-inside-except
-  "BLE001",   # Blind except
-  "C405",     # Unnecessary literal set
-  "C416",     # Unnecessary comprehension
-  "E721",     # Type comparison using ==
-  "E722",     # Bare except
-  "E741",     # Ambiguous variable name
-  "EM101",    # Exception string literal
-  "EM102",    # Exception f-string
-  "F541",     # f-string without placeholders
-  "F811",     # Redefinition of unused name
-  "F821",     # Undefined name
-  "F841",     # Unused variable
-  "FA100",    # Missing from __future__ import annotations
-  "FA102",    # Missing from __future__ import annotations in stub
-  "FBT001",   # Boolean positional arg in function definition
-  "FBT002",   # Boolean default value in function definition
-  "FURB188",  # Prefer removeprefix over conditional slice
-  "G004",     # Logging with f-string
-  "I001",     # Import block unsorted or unformatted
-  "INP001",   # Implicit namespace package
-  "LOG015",   # root logger usage
-  "N801",     # Class name should use CapWords convention
-  "N802",     # Function name should be lowercase
-  "N806",     # Variable in function should be lowercase
-  "N818",     # Exception name should end with Error
-  "PERF102",  # Use keys() or values() instead of items()
-  "PERF401",  # Use list comprehension
-  "PIE790",   # Unnecessary pass statement
-  "PLC0415",  # Import should be at top of file
-  "PLC1802",  # Use of len(x) == 0
-  "PLR2004",  # Magic value used in comparison
-  "PLW0602",  # Global variable not assigned
-  "PLW0603",  # Using global statement
-  "PLW1508",  # Invalid envvar default
-  "PLW2901",  # Outer loop variable overwritten
-  "PT011",    # pytest.raises too broad
-  "PYI041",   # Use float instead of int | float
+  # Style choices — these are deliberate project conventions
+  "EM101",    # Exception string literals (pragmatic for this codebase)
+  "EM102",    # Exception f-strings (pragmatic for this codebase)
+  "G004",     # Logging f-strings (clearer than % formatting)
+  "T201",     # print() used intentionally for user output
+  "TRY003",   # Raise with inline message strings (pragmatic)
+
+  # Backwards-compatibility suppressions for existing code
+  "A001",     # Variable shadows built-in (existing API names)
+  "A002",     # Argument shadows built-in (existing API signatures)
+  "B006",     # Mutable default argument (existing signatures, would break API)
+  "FBT001",   # Boolean positional arg (existing API)
+  "FBT002",   # Boolean default value (existing API)
+  "N802",     # Function name casing (existing API: get_AI_endpoint etc.)
+  "N806",     # Variable casing (existing code conventions)
+  "SLF001",   # Private member access (needed for MCP wrapper internals)
+
+  # Framework / ecosystem constraints
+  "ARG001",   # Unused function argument (required by hook/callback signatures)
+  "B023",     # Function uses loop variable (async closures in runner)
+  "INP001",   # Implicit namespace package (project uses src layout)
+  "PLW2901",  # Outer loop variable overwritten (iteration patterns)
+  "S701",     # Jinja2 autoescape=False (YAML context, not HTML)
+
+  # Low-signal rules for this project
+  "PLR2004",  # Magic value comparisons
   "RET503",   # Missing explicit return
-  "RET504",   # Unnecessary assignment before return
   "RET505",   # Unnecessary else after return
-  "RET506",   # Unnecessary else after raise
-  "RUF005",   # Unpack instead of concatenation
-  "RUF010",   # Use explicit conversion flag
-  "RUF015",   # Prefer next() over single element slice
-  "RUF059",   # Use of private function/attribute
-  "RUF100",   # Unused noqa directive
-  "S108",     # Hardcoded temp file/directory
-  "S607",     # Starting process with partial path
-  "S701",     # Using jinja2 templates with autoescape=False is dangerous and can lead to XSS
-  "SIM102",   # Use single if statement
-  "SIM115",   # Use context handler for file
-  "SIM210",   # Use ternary operator
-  "SLF001",   # Private member access
-  "T201",     # print found
-  "TID252",   # Relative imports from parent modules
-  "TRY003",   # Raise vanilla args
-  "TRY004",   # Prefer TypeError for wrong type
-  "TRY300",   # Consider moving statement to else
-  "TRY301",   # Abstract raise to inner function
-  "TRY400",   # Use logging.exception instead of logging.error
-  "UP004",    # Use X | Y for union types
-  "UP006",    # Use X | Y for union types in isinstance
-  "UP009",    # UTF-8 encoding declaration
-  "UP015",    # Unnecessary mode argument
-  "UP020",    # Use builtin open
-  "UP024",    # Replace aliased errors with OSError
-  "UP032",    # Use f-string
-  "UP035",    # Import from collections.abc
-  "UP045",    # Use X | None for type annotations
-  "W291",     # Trailing whitespace
-  "W293",     # Blank line contains whitespace
+  "SIM102",   # Collapsible if (readability preference)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "PLR2004"]

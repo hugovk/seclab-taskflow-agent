@@ -96,11 +96,11 @@ def list_capi_models(token: str) -> dict[str, dict]:
                 models_list = r.json().get("data", [])
         for model in models_list:
             models[model.get("id")] = dict(model)
-    except httpx.RequestError as e:
+    except httpx.RequestError:
         logging.exception("Request error")
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         logging.exception("JSON error")
-    except httpx.HTTPStatusError as e:
+    except httpx.HTTPStatusError:
         logging.exception("HTTP error")
     return models
 

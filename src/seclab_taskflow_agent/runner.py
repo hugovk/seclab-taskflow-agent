@@ -1,0 +1,477 @@
+# SPDX-FileCopyrightText: GitHub, Inc.
+# SPDX-License-Identifier: MIT
+
+"""Taskflow execution engine.
+
+Contains the core logic for deploying task agents, executing taskflows,
+and managing the agent lifecycle. Extracted from the original monolithic
+``__main__.py``.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import uuid
+from typing import Any
+
+import jinja2
+from agents import Agent, RunContextWrapper, TContext, Tool
+from agents.agent import ModelSettings
+from agents.exceptions import AgentsException, MaxTurnsExceeded
+from agents.extensions.handoff_prompt import prompt_with_handoff_instructions
+from openai import APITimeoutError, BadRequestError, RateLimitError
+from openai.types.responses import ResponseTextDeltaEvent
+
+from .agent import DEFAULT_MODEL, TaskAgent, TaskAgentHooks, TaskRunHooks
+from .available_tools import AvailableTools
+from .env_utils import TmpEnv
+from .mcp_lifecycle import MCP_CLEANUP_TIMEOUT, build_mcp_servers, mcp_session_task
+from .mcp_utils import compress_name, mcp_client_params, mcp_system_prompt
+from .render_utils import flush_async_output, render_model_output
+from .shell_utils import shell_tool_call
+from .template_utils import render_template
+
+DEFAULT_MAX_TURNS = 50
+RATE_LIMIT_BACKOFF = 5
+MAX_RATE_LIMIT_BACKOFF = 120
+MAX_API_RETRY = 5
+
+
+async def deploy_task_agents(
+    available_tools: AvailableTools,
+    agents: dict[str, Any],
+    prompt: str,
+    *,
+    async_task: bool = False,
+    toolboxes_override: list[str] | None = None,
+    blocked_tools: list[str] | None = None,
+    headless: bool = False,
+    exclude_from_context: bool = False,
+    max_turns: int = DEFAULT_MAX_TURNS,
+    model: str = DEFAULT_MODEL,
+    model_par: dict[str, Any] | None = None,
+    run_hooks: TaskRunHooks | None = None,
+    agent_hooks: TaskAgentHooks | None = None,
+) -> bool:
+    """Deploy and run task agents with MCP servers.
+
+    Args:
+        available_tools: Tool registry.
+        agents: Mapping of agent name → personality config.
+        prompt: User prompt to execute.
+        async_task: Whether this is an async (concurrent) task.
+        toolboxes_override: Override personality toolboxes with these.
+        blocked_tools: Tool names to block.
+        headless: Skip confirmation prompts.
+        exclude_from_context: Exclude tool results from LLM context.
+        max_turns: Maximum agent turns.
+        model: Model identifier.
+        model_par: Additional model parameters.
+        run_hooks: Custom run hooks.
+        agent_hooks: Custom agent hooks.
+
+    Returns:
+        True if the task completed successfully.
+    """
+    model_par = model_par or {}
+    toolboxes_override = toolboxes_override or []
+    blocked_tools = blocked_tools or []
+
+    task_id = str(uuid.uuid4())
+    await render_model_output(f"** 🤖💪 Deploying Task Flow Agent(s): {list(agents.keys())}\n")
+    await render_model_output(f"** 🤖💪 Task ID: {task_id}\n")
+    await render_model_output(f"** 🤖💪 Model  : {model}{', params: ' + str(model_par) if model_par else ''}\n")
+
+    # Resolve toolboxes
+    toolboxes: list[str] = []
+    if toolboxes_override:
+        toolboxes = toolboxes_override
+    else:
+        for v in agents.values():
+            for tb in v.get("toolboxes", []):
+                if tb not in toolboxes:
+                    toolboxes.append(tb)
+
+    # Model settings
+    parallel_tool_calls = bool(os.getenv("MODEL_PARALLEL_TOOL_CALLS"))
+    model_params: dict[str, Any] = {
+        "temperature": os.getenv("MODEL_TEMP", default=0.0),
+        "tool_choice": "auto" if toolboxes else None,
+        "parallel_tool_calls": parallel_tool_calls if toolboxes else None,
+    }
+    model_params.update(model_par)
+    model_settings = ModelSettings(**model_params)
+
+    # Build MCP servers and collect server prompts
+    entries = build_mcp_servers(available_tools, toolboxes, blocked_tools, headless)
+    mcp_params = mcp_client_params(available_tools, toolboxes)
+    server_prompts = [sp for _, (_, _, sp, _) in mcp_params.items()]
+
+    # Connect MCP servers
+    servers_connected = asyncio.Event()
+    start_cleanup = asyncio.Event()
+    mcp_sessions = asyncio.create_task(mcp_session_task(entries, servers_connected, start_cleanup))
+
+    await servers_connected.wait()
+    logging.debug("All mcp servers are connected!")
+
+    try:
+        important_guidelines = [
+            "Do not prompt the user with questions.",
+            "Run tasks until a final result is available.",
+            "Ensure responses are based on the latest information from available tools.",
+            "Run tools sequentially, wait until one tool has completed before calling the next.",
+        ]
+
+        # Create handoff agents
+        handoffs = []
+        agent_names = list(agents.keys())
+        for handoff_agent in agent_names[1:]:
+            handoffs.append(
+                TaskAgent(
+                    name=compress_name(handoff_agent),
+                    instructions=prompt_with_handoff_instructions(
+                        mcp_system_prompt(
+                            agents[handoff_agent]["personality"],
+                            agents[handoff_agent]["task"],
+                            server_prompts=server_prompts,
+                            important_guidelines=important_guidelines,
+                        )
+                    ),
+                    handoffs=[],
+                    exclude_from_context=exclude_from_context,
+                    mcp_servers=[e.server for e in entries],
+                    model=model,
+                    model_settings=model_settings,
+                    run_hooks=run_hooks,
+                    agent_hooks=agent_hooks,
+                ).agent
+            )
+
+        # Create primary agent
+        primary_agent = agent_names[0]
+        system_prompt = mcp_system_prompt(
+            agents[primary_agent]["personality"],
+            agents[primary_agent]["task"],
+            server_prompts=server_prompts,
+            important_guidelines=important_guidelines,
+        )
+        agent0 = TaskAgent(
+            name=primary_agent,
+            instructions=prompt_with_handoff_instructions(system_prompt) if handoffs else system_prompt,
+            handoffs=handoffs,
+            exclude_from_context=exclude_from_context,
+            mcp_servers=[e.server for e in entries],
+            model=model,
+            model_settings=model_settings,
+            run_hooks=run_hooks,
+            agent_hooks=agent_hooks,
+        )
+
+        try:
+            complete = False
+
+            async def _run_streamed() -> None:
+                max_retry = MAX_API_RETRY
+                rate_limit_backoff = RATE_LIMIT_BACKOFF
+                while rate_limit_backoff:
+                    try:
+                        result = agent0.run_streamed(prompt, max_turns=max_turns)
+                        async for event in result.stream_events():
+                            if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                                await render_model_output(event.data.delta, async_task=async_task, task_id=task_id)
+                        await render_model_output("\n\n", async_task=async_task, task_id=task_id)
+                        return
+                    except APITimeoutError:
+                        if not max_retry:
+                            logging.exception("Max retries for APITimeoutError reached")
+                            raise
+                        max_retry -= 1
+                    except RateLimitError:
+                        if rate_limit_backoff == MAX_RATE_LIMIT_BACKOFF:
+                            raise APITimeoutError("Max rate limit backoff reached")
+                        if rate_limit_backoff > MAX_RATE_LIMIT_BACKOFF:
+                            rate_limit_backoff = MAX_RATE_LIMIT_BACKOFF
+                        else:
+                            rate_limit_backoff += rate_limit_backoff
+                        logging.exception(f"Hit rate limit ... holding for {rate_limit_backoff}")
+                        await asyncio.sleep(rate_limit_backoff)
+
+            await _run_streamed()
+            complete = True
+
+        except MaxTurnsExceeded as e:
+            await render_model_output(f"** 🤖❗ Max Turns Reached: {e}\n", async_task=async_task, task_id=task_id)
+            logging.exception(f"Exceeded max_turns: {max_turns}")
+        except AgentsException as e:
+            await render_model_output(f"** 🤖❗ Agent Exception: {e}\n", async_task=async_task, task_id=task_id)
+            logging.exception("Agent Exception")
+        except BadRequestError as e:
+            await render_model_output(f"** 🤖❗ Request Error: {e}\n", async_task=async_task, task_id=task_id)
+            logging.exception("Bad Request")
+        except APITimeoutError as e:
+            await render_model_output(f"** 🤖❗ Timeout Error: {e}\n", async_task=async_task, task_id=task_id)
+            logging.exception("API Timeout")
+
+        if async_task:
+            await flush_async_output(task_id)
+
+        return complete
+
+    finally:
+        start_cleanup.set()
+        cleanup_attempts_left = len(entries)
+        while cleanup_attempts_left and entries:
+            try:
+                cleanup_attempts_left -= 1
+                await asyncio.wait_for(mcp_sessions, timeout=MCP_CLEANUP_TIMEOUT)
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                logging.exception("Exception in mcp server cleanup task")
+
+
+async def run_main(
+    available_tools: AvailableTools,
+    p: str | None,
+    t: str | None,
+    cli_globals: dict[str, str],
+    prompt: str | None,
+) -> None:
+    """Main entry point for taskflow/personality execution.
+
+    Args:
+        available_tools: Tool registry.
+        p: Personality module path, or None.
+        t: Taskflow module path, or None.
+        cli_globals: Global variables from CLI.
+        prompt: User prompt text.
+    """
+    last_mcp_tool_results: list[str] = []
+
+    async def on_tool_end_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool, result: str) -> None:
+        last_mcp_tool_results.append(result)
+
+    async def on_tool_start_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool) -> None:
+        await render_model_output(f"\n** 🤖🛠️ Tool Call: {tool.name}\n")
+
+    async def on_handoff_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], source: Agent[TContext]) -> None:
+        await render_model_output(f"\n** 🤖🤝 Agent Handoff: {source.name} -> {agent.name}\n")
+
+    if p:
+        personality = available_tools.get_personality(p)
+        await deploy_task_agents(
+            available_tools,
+            {p: personality},
+            prompt or "",
+            run_hooks=TaskRunHooks(on_tool_end=on_tool_end_hook, on_tool_start=on_tool_start_hook),
+        )
+
+    if t:
+        taskflow = available_tools.get_taskflow(t)
+        await render_model_output(f"** 🤖💪 Running Task Flow: {t}\n")
+
+        # Resolve global variables (file defaults + CLI overrides)
+        global_variables = taskflow.get("globals", {})
+        if cli_globals:
+            global_variables.update(cli_globals)
+
+        # Resolve model config
+        model_config = taskflow.get("model_config", {})
+        model_keys: list[str] = []
+        models_params: dict[str, dict[str, Any]] = {}
+        if model_config:
+            m_config = available_tools.get_model_config(model_config)
+            model_dict = m_config.get("models", {})
+            if model_dict and not isinstance(model_dict, dict):
+                raise ValueError(f"Models section of the model_config file {model_config} must be a dictionary")
+            model_keys = list(model_dict.keys())
+            models_params = m_config.get("model_settings", {})
+            if models_params and not isinstance(models_params, dict):
+                raise ValueError(f"Settings section of model_config file {model_config} must be a dictionary")
+            if not set(models_params.keys()).difference(model_keys).issubset(set()):
+                raise ValueError(
+                    f"Settings section of model_config file {model_config} contains models not in the model section"
+                )
+            for k, v in models_params.items():
+                if not isinstance(v, dict):
+                    raise ValueError(f"Settings for model {k} in model_config file {model_config} is not a dictionary")
+
+        for task_entry in taskflow["taskflow"]:
+            task_body = task_entry["task"]
+
+            # Reusable taskflow support
+            uses = task_body.get("uses", "")
+            if uses:
+                reusable_taskflow = available_tools.get_taskflow(uses)
+                if reusable_taskflow is None:
+                    raise ValueError(f"No such reusable taskflow: {uses}")
+                if len(reusable_taskflow["taskflow"]) > 1:
+                    raise ValueError("Reusable taskflows can only contain 1 task")
+                for k, v in reusable_taskflow["taskflow"][0]["task"].items():
+                    if k not in task_body:
+                        task_body[k] = v
+
+            # Resolve model
+            model = task_body.get("model", DEFAULT_MODEL)
+            model_settings: dict[str, Any] = {}
+            if model in model_keys:
+                if model in models_params:
+                    model_settings = models_params[model].copy()
+                model = model_dict[model]
+            task_model_settings = task_body.get("model_settings", {})
+            if not isinstance(task_model_settings, dict):
+                name = task_body.get("name", "")
+                raise ValueError(f"model_settings in task {name} needs to be a dictionary")
+            model_settings.update(task_model_settings)
+
+            # Parse task fields
+            agents_list = task_body.get("agents", [])
+            headless = task_body.get("headless", False)
+            blocked_tools = task_body.get("blocked_tools", [])
+            run = task_body.get("run", "")
+            inputs = task_body.get("inputs", {})
+            task_prompt = task_body.get("user_prompt", "")
+            if run and task_prompt:
+                raise ValueError("shell task and prompt task are mutually exclusive!")
+            must_complete = task_body.get("must_complete", False)
+            max_turns = task_body.get("max_steps", DEFAULT_MAX_TURNS)
+            toolboxes_override = task_body.get("toolboxes", [])
+            env = task_body.get("env", {})
+            repeat_prompt = task_body.get("repeat_prompt", False)
+            exclude_from_context = task_body.get("exclude_from_context", False)
+            async_task = task_body.get("async", False)
+            max_concurrent_tasks = task_body.get("async_limit", 5)
+
+            # Render prompt template (skip if repeat_prompt — result not yet available)
+            if task_prompt and not repeat_prompt:
+                try:
+                    task_prompt = render_template(
+                        template_str=task_prompt,
+                        available_tools=available_tools,
+                        globals_dict=global_variables,
+                        inputs_dict=inputs,
+                    )
+                except jinja2.TemplateError as e:
+                    logging.error(f"Template rendering error: {e}")
+                    raise ValueError(f"Failed to render prompt template: {e}")
+
+            with TmpEnv(env):
+                prompts_to_run: list[str] = []
+                if repeat_prompt:
+                    if "result" not in task_prompt.lower():
+                        logging.warning("repeat_prompt enabled but no {{ result }} in prompt")
+                    try:
+                        last_result = json.loads(last_mcp_tool_results.pop())
+                        text = last_result.get("text", "")
+                        try:
+                            iterable_result = json.loads(text)
+                        except json.JSONDecodeError as exc:
+                            logging.critical(f"Could not parse result text: {text}")
+                            raise ValueError("Result text is not valid JSON") from exc
+                        try:
+                            iter(iterable_result)
+                        except TypeError:
+                            logging.critical("Last MCP tool result is not iterable")
+                            raise
+                    except IndexError:
+                        logging.critical("No last MCP tool result available")
+                        raise
+
+                    if not iterable_result:
+                        await render_model_output("** 🤖❗MCP tool result iterable is empty!\n")
+                    else:
+                        logging.debug(f"Rendering templated prompts for results: {iterable_result}")
+                        for value in iterable_result:
+                            try:
+                                rendered_prompt = render_template(
+                                    template_str=task_prompt,
+                                    available_tools=available_tools,
+                                    globals_dict=global_variables,
+                                    inputs_dict=inputs,
+                                    result_value=value,
+                                )
+                                prompts_to_run.append(rendered_prompt)
+                            except jinja2.TemplateError as e:
+                                logging.error(f"Error rendering template for result {value}: {e}")
+                                raise ValueError(f"Template rendering failed: {e}")
+                else:
+                    prompts_to_run.append(task_prompt)
+
+                async def run_prompts(async_task: bool = False, max_concurrent_tasks: int = 5) -> bool:
+                    if run:
+                        await render_model_output("** 🤖🐚 Executing Shell Task\n")
+                        try:
+                            result = shell_tool_call(run).content[0].model_dump_json()
+                            last_mcp_tool_results.append(result)
+                            return True
+                        except RuntimeError as e:
+                            await render_model_output(f"** 🤖❗ Shell Task Exception: {e}\n")
+                            logging.exception("Shell task error")
+                            return False
+
+                    tasks: list[Any] = []
+                    task_results: list[Any] = []
+                    semaphore = asyncio.Semaphore(max_concurrent_tasks)
+                    for p_prompt in prompts_to_run:
+                        resolved_agents: dict[str, Any] = {}
+                        current_agents = list(agents_list)
+                        if not current_agents:
+                            from .cli import parse_prompt_args
+                            p_val, _, _, _, p_prompt, _ = parse_prompt_args(available_tools, p_prompt)
+                            if p_val:
+                                current_agents.append(p_val)
+                        for agent_name in current_agents:
+                            personality = available_tools.get_personality(agent_name)
+                            if personality is None:
+                                raise ValueError(f"No such personality: {agent_name}")
+                            resolved_agents[agent_name] = personality
+
+                        async def _deploy(ra: dict, pp: str) -> bool:
+                            async with semaphore:
+                                return await deploy_task_agents(
+                                    available_tools,
+                                    ra,
+                                    pp,
+                                    async_task=async_task,
+                                    toolboxes_override=toolboxes_override,
+                                    blocked_tools=blocked_tools,
+                                    headless=headless,
+                                    exclude_from_context=exclude_from_context,
+                                    max_turns=max_turns,
+                                    run_hooks=TaskRunHooks(
+                                        on_tool_end=on_tool_end_hook, on_tool_start=on_tool_start_hook
+                                    ),
+                                    model=model,
+                                    model_par=model_settings,
+                                    agent_hooks=TaskAgentHooks(on_handoff=on_handoff_hook),
+                                )
+
+                        task_coroutine = _deploy(resolved_agents, p_prompt)
+
+                        if not async_task:
+                            result = await task_coroutine
+                            task_results.append(result)
+                        else:
+                            tasks.append(task_coroutine)
+
+                    if async_task:
+                        task_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                    complete = True
+                    for result in task_results:
+                        if isinstance(result, Exception):
+                            logging.error(f"Caught exception in Gather: {result}")
+                            result = False
+                        complete = result and complete
+                    return complete
+
+                task_complete = await run_prompts(async_task=async_task, max_concurrent_tasks=max_concurrent_tasks)
+
+                if must_complete and not task_complete:
+                    logging.critical("Required task not completed ... aborting!")
+                    await render_model_output("🤖💥 *Required task not completed ...\n")
+                    break

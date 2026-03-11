@@ -23,7 +23,7 @@ from agents import (
     set_tracing_disabled,
 )
 from agents.agent import FunctionToolResult, ModelSettings, ToolsToFinalOutputResult
-from agents.run import DEFAULT_MAX_TURNS, RunHooks
+from agents.run import DEFAULT_MAX_TURNS
 from dotenv import find_dotenv, load_dotenv
 from openai import AsyncOpenAI
 
