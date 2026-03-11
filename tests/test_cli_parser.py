@@ -70,8 +70,8 @@ class TestCliGlobals:
         available_tools = AvailableTools()
 
         taskflow = available_tools.get_taskflow("tests.data.test_globals_taskflow")
-        assert "globals" in taskflow
-        assert taskflow["globals"]["test_var"] == "default_value"
+        assert taskflow.globals is not None
+        assert taskflow.globals["test_var"] == "default_value"
 
 
 if __name__ == "__main__":

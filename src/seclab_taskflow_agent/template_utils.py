@@ -37,7 +37,7 @@ class PromptLoader(jinja2.BaseLoader):
             prompt_data = self.available_tools.get_prompt(template)
             if not prompt_data:
                 raise jinja2.TemplateNotFound(template)
-            source = prompt_data.get('prompt', '')
+            source = prompt_data.prompt or ""
             # Return: (source, filename, uptodate_func)
             return source, None, lambda: True
         except Exception:

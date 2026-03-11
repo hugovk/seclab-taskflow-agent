@@ -282,7 +282,7 @@ End of prompt."""
         reusable_taskflow = available_tools.get_taskflow('tests.data.test_reusable_taskflow_with_variables')
 
         # Get the user_prompt from the reusable taskflow's task
-        user_prompt = reusable_taskflow['taskflow'][0]['task']['user_prompt']
+        user_prompt = reusable_taskflow.taskflow[0].task.user_prompt
 
         # Render it with parent's globals and inputs (simulating what __main__.py does)
         result = render_template(

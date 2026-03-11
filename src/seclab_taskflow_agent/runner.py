@@ -29,6 +29,7 @@ from .agent import DEFAULT_MODEL, TaskAgent, TaskAgentHooks, TaskRunHooks
 from .available_tools import AvailableTools
 from .env_utils import TmpEnv
 from .mcp_lifecycle import MCP_CLEANUP_TIMEOUT, build_mcp_servers, mcp_session_task
+from .models import PersonalityDocument, TaskDefinition
 from .mcp_utils import compress_name, mcp_client_params, mcp_system_prompt
 from .render_utils import flush_async_output, render_model_output
 from .shell_utils import shell_tool_call
@@ -42,7 +43,7 @@ MAX_API_RETRY = 5
 
 async def deploy_task_agents(
     available_tools: AvailableTools,
-    agents: dict[str, Any],
+    agents: dict[str, PersonalityDocument],
     prompt: str,
     *,
     async_task: bool = False,
@@ -60,18 +61,8 @@ async def deploy_task_agents(
 
     Args:
         available_tools: Tool registry.
-        agents: Mapping of agent name → personality config.
+        agents: Mapping of agent name → PersonalityDocument.
         prompt: User prompt to execute.
-        async_task: Whether this is an async (concurrent) task.
-        toolboxes_override: Override personality toolboxes with these.
-        blocked_tools: Tool names to block.
-        headless: Skip confirmation prompts.
-        exclude_from_context: Exclude tool results from LLM context.
-        max_turns: Maximum agent turns.
-        model: Model identifier.
-        model_par: Additional model parameters.
-        run_hooks: Custom run hooks.
-        agent_hooks: Custom agent hooks.
 
     Returns:
         True if the task completed successfully.
@@ -85,13 +76,13 @@ async def deploy_task_agents(
     await render_model_output(f"** 🤖💪 Task ID: {task_id}\n")
     await render_model_output(f"** 🤖💪 Model  : {model}{', params: ' + str(model_par) if model_par else ''}\n")
 
-    # Resolve toolboxes
+    # Resolve toolboxes from personality definitions or override
     toolboxes: list[str] = []
     if toolboxes_override:
         toolboxes = toolboxes_override
     else:
-        for v in agents.values():
-            for tb in v.get("toolboxes", []):
+        for personality in agents.values():
+            for tb in personality.toolboxes:
                 if tb not in toolboxes:
                     toolboxes.append(tb)
 
@@ -126,17 +117,18 @@ async def deploy_task_agents(
             "Run tools sequentially, wait until one tool has completed before calling the next.",
         ]
 
-        # Create handoff agents
+        # Create handoff agents from additional personalities
         handoffs = []
         agent_names = list(agents.keys())
-        for handoff_agent in agent_names[1:]:
+        for handoff_name in agent_names[1:]:
+            personality = agents[handoff_name]
             handoffs.append(
                 TaskAgent(
-                    name=compress_name(handoff_agent),
+                    name=compress_name(handoff_name),
                     instructions=prompt_with_handoff_instructions(
                         mcp_system_prompt(
-                            agents[handoff_agent]["personality"],
-                            agents[handoff_agent]["task"],
+                            personality.personality,
+                            personality.task,
                             server_prompts=server_prompts,
                             important_guidelines=important_guidelines,
                         )
@@ -152,15 +144,16 @@ async def deploy_task_agents(
             )
 
         # Create primary agent
-        primary_agent = agent_names[0]
+        primary_name = agent_names[0]
+        primary_personality = agents[primary_name]
         system_prompt = mcp_system_prompt(
-            agents[primary_agent]["personality"],
-            agents[primary_agent]["task"],
+            primary_personality.personality,
+            primary_personality.task,
             server_prompts=server_prompts,
             important_guidelines=important_guidelines,
         )
         agent0 = TaskAgent(
-            name=primary_agent,
+            name=primary_name,
             instructions=prompt_with_handoff_instructions(system_prompt) if handoffs else system_prompt,
             handoffs=handoffs,
             exclude_from_context=exclude_from_context,
@@ -271,80 +264,81 @@ async def run_main(
         )
 
     if t:
-        taskflow = available_tools.get_taskflow(t)
+        taskflow_doc = available_tools.get_taskflow(t)
         await render_model_output(f"** 🤖💪 Running Task Flow: {t}\n")
 
         # Resolve global variables (file defaults + CLI overrides)
-        global_variables = taskflow.get("globals", {})
+        global_variables = dict(taskflow_doc.globals or {})
         if cli_globals:
             global_variables.update(cli_globals)
 
         # Resolve model config
-        model_config = taskflow.get("model_config", {})
+        model_config_ref = taskflow_doc.model_config_ref
         model_keys: list[str] = []
         models_params: dict[str, dict[str, Any]] = {}
-        if model_config:
-            m_config = available_tools.get_model_config(model_config)
-            model_dict = m_config.get("models", {})
+        if model_config_ref:
+            m_config = available_tools.get_model_config(model_config_ref)
+            model_dict = m_config.models or {}
             if model_dict and not isinstance(model_dict, dict):
-                raise ValueError(f"Models section of the model_config file {model_config} must be a dictionary")
+                raise ValueError(f"Models section of the model_config file {model_config_ref} must be a dictionary")
             model_keys = list(model_dict.keys())
-            models_params = m_config.get("model_settings", {})
+            models_params = m_config.model_settings or {}
             if models_params and not isinstance(models_params, dict):
-                raise ValueError(f"Settings section of model_config file {model_config} must be a dictionary")
+                raise ValueError(f"Settings section of model_config file {model_config_ref} must be a dictionary")
             if not set(models_params.keys()).difference(model_keys).issubset(set()):
                 raise ValueError(
-                    f"Settings section of model_config file {model_config} contains models not in the model section"
+                    f"Settings section of model_config file {model_config_ref} contains models not in the model section"
                 )
             for k, v in models_params.items():
                 if not isinstance(v, dict):
-                    raise ValueError(f"Settings for model {k} in model_config file {model_config} is not a dictionary")
+                    raise ValueError(f"Settings for model {k} in model_config file {model_config_ref} is not a dictionary")
 
-        for task_entry in taskflow["taskflow"]:
-            task_body = task_entry["task"]
+        for task_wrapper in taskflow_doc.taskflow:
+            task = task_wrapper.task
 
-            # Reusable taskflow support
-            uses = task_body.get("uses", "")
-            if uses:
-                reusable_taskflow = available_tools.get_taskflow(uses)
-                if reusable_taskflow is None:
-                    raise ValueError(f"No such reusable taskflow: {uses}")
-                if len(reusable_taskflow["taskflow"]) > 1:
+            # Reusable taskflow support: merge parent defaults into current task
+            if task.uses:
+                reusable_doc = available_tools.get_taskflow(task.uses)
+                if reusable_doc is None:
+                    raise ValueError(f"No such reusable taskflow: {task.uses}")
+                if len(reusable_doc.taskflow) > 1:
                     raise ValueError("Reusable taskflows can only contain 1 task")
-                for k, v in reusable_taskflow["taskflow"][0]["task"].items():
-                    if k not in task_body:
-                        task_body[k] = v
+                # Merge: parent fields fill in where current task has defaults
+                parent_task = reusable_doc.taskflow[0].task
+                merged = parent_task.model_dump(by_alias=True, exclude_defaults=True)
+                current = task.model_dump(by_alias=True, exclude_defaults=True)
+                merged.update(current)  # current task overrides parent
+                task = TaskDefinition.model_validate(merged)
 
             # Resolve model
-            model = task_body.get("model", DEFAULT_MODEL)
+            model = task.model or DEFAULT_MODEL
             model_settings: dict[str, Any] = {}
             if model in model_keys:
                 if model in models_params:
                     model_settings = models_params[model].copy()
                 model = model_dict[model]
-            task_model_settings = task_body.get("model_settings", {})
+            task_model_settings = task.model_settings or {}
             if not isinstance(task_model_settings, dict):
-                name = task_body.get("name", "")
-                raise ValueError(f"model_settings in task {name} needs to be a dictionary")
+                raise ValueError(f"model_settings in task {task.name or ''} needs to be a dictionary")
             model_settings.update(task_model_settings)
 
-            # Parse task fields
-            agents_list = task_body.get("agents", [])
-            headless = task_body.get("headless", False)
-            blocked_tools = task_body.get("blocked_tools", [])
-            run = task_body.get("run", "")
-            inputs = task_body.get("inputs", {})
-            task_prompt = task_body.get("user_prompt", "")
+            # Read task fields via typed attributes
+            agents_list = task.agents or []
+            headless = task.headless
+            blocked_tools = task.blocked_tools or []
+            run = task.run or ""
+            inputs = task.inputs or {}
+            task_prompt = task.user_prompt or ""
             if run and task_prompt:
                 raise ValueError("shell task and prompt task are mutually exclusive!")
-            must_complete = task_body.get("must_complete", False)
-            max_turns = task_body.get("max_steps", DEFAULT_MAX_TURNS)
-            toolboxes_override = task_body.get("toolboxes", [])
-            env = task_body.get("env", {})
-            repeat_prompt = task_body.get("repeat_prompt", False)
-            exclude_from_context = task_body.get("exclude_from_context", False)
-            async_task = task_body.get("async", False)
-            max_concurrent_tasks = task_body.get("async_limit", 5)
+            must_complete = task.must_complete
+            max_turns = task.max_steps or DEFAULT_MAX_TURNS
+            toolboxes_override = task.toolboxes or []
+            env = task.env or {}
+            repeat_prompt = task.repeat_prompt
+            exclude_from_context = task.exclude_from_context
+            async_task = task.async_task
+            max_concurrent_tasks = task.async_limit
 
             # Render prompt template (skip if repeat_prompt — result not yet available)
             if task_prompt and not repeat_prompt:
