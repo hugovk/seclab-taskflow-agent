@@ -151,25 +151,36 @@ class TaskAgent:
         model: str = DEFAULT_MODEL,
         model_settings: ModelSettings | None = None,
         api_type: str = "chat_completions",
+        endpoint: str | None = None,
+        token: str | None = None,
         run_hooks: TaskRunHooks | None = None,
         agent_hooks: TaskAgentHooks | None = None,
     ) -> None:
         """Create a TaskAgent with the specified configuration.
 
         Args:
-            api_type: OpenAI API type -- ``"chat_completions"`` or ``"responses"``.
+            api_type: ``"chat_completions"`` or ``"responses"``.
+            endpoint: Optional API endpoint URL override for this model.
+            token: Optional env var name whose value is used as the API key.
         """
+        # Resolve per-model endpoint and token, falling back to defaults
+        resolved_endpoint = endpoint or api_endpoint
+        if token:
+            resolved_token = os.getenv(token, "")
+            if not resolved_token:
+                raise RuntimeError(f"Token env var {token!r} is not set")
+        else:
+            resolved_token = get_AI_token()
+
         client = AsyncOpenAI(
-            base_url=api_endpoint,
-            api_key=get_AI_token(),
+            base_url=resolved_endpoint,
+            api_key=resolved_token,
             default_headers={"Copilot-Integration-Id": COPILOT_INTEGRATION_ID},
         )
         set_default_openai_client(client)
         set_default_openai_api(api_type)
         set_tracing_disabled(True)
         self.run_hooks = run_hooks or TaskRunHooks()
-        # useful agent patterns:
-        # openai/openai-agents-python/blob/main/examples/agent_patterns
 
         # when we want to exclude tool results from context, we receive results here instead of sending to LLM
         def _ToolsToFinalOutputFunction(

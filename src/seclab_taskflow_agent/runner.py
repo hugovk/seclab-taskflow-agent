@@ -108,37 +108,54 @@ def _merge_reusable_task(
     return TaskDefinition.model_validate(merged)
 
 
+# Keys in model_settings that are handled by the engine, not ModelSettings.
+_ENGINE_SETTING_KEYS = {"api_type", "endpoint", "token"}
+
+
 def _resolve_task_model(
     task: TaskDefinition,
     model_keys: list[str],
     model_dict: dict[str, str],
     models_params: dict[str, dict[str, Any]],
-) -> tuple[str, dict[str, Any]]:
-    """Resolve the final model name and settings for a task.
-
-    Args:
-        task: The task definition containing optional model/model_settings.
-        model_keys: Logical model names from the model config.
-        model_dict: Mapping of logical model names to provider model IDs.
-        models_params: Per-model settings from the model config.
+    default_api_type: str = "chat_completions",
+) -> tuple[str, dict[str, Any], str, str | None, str | None]:
+    """Resolve the final model name, settings, and per-model overrides.
 
     Returns:
-        A tuple of (resolved_model_name, merged_model_settings).
+        A tuple of ``(model_id, model_settings, api_type, endpoint, token)``
+        where *endpoint* and *token* are ``None`` when not overridden.
 
     Raises:
         ValueError: If task-level model_settings is not a dictionary.
     """
-    model: str = task.model or DEFAULT_MODEL
+    logical_name: str = task.model or DEFAULT_MODEL
     model_settings: dict[str, Any] = {}
-    if model in model_keys:
-        if model in models_params:
-            model_settings = models_params[model].copy()
-        model = model_dict[model]
+    api_type: str = default_api_type
+    endpoint: str | None = None
+    token: str | None = None
+
+    if logical_name in model_keys:
+        if logical_name in models_params:
+            model_settings = models_params[logical_name].copy()
+        logical_name = model_dict[logical_name]
+
+    # Extract engine-level keys before merging task settings
+    api_type = model_settings.pop("api_type", api_type)
+    endpoint = model_settings.pop("endpoint", None)
+    token = model_settings.pop("token", None)
+
     task_model_settings: dict[str, Any] | Any = task.model_settings or {}
     if not isinstance(task_model_settings, dict):
         raise ValueError(f"model_settings in task {task.name or ''} needs to be a dictionary")
-    model_settings.update(task_model_settings)
-    return model, model_settings
+
+    # Task-level overrides can also set engine keys
+    task_settings = dict(task_model_settings)
+    api_type = task_settings.pop("api_type", api_type)
+    endpoint = task_settings.pop("endpoint", endpoint)
+    token = task_settings.pop("token", token)
+
+    model_settings.update(task_settings)
+    return logical_name, model_settings, api_type, endpoint, token
 
 
 async def _build_prompts_to_run(
@@ -226,6 +243,8 @@ async def deploy_task_agents(
     model: str = DEFAULT_MODEL,
     model_par: dict[str, Any] | None = None,
     api_type: str = "chat_completions",
+    endpoint: str | None = None,
+    token: str | None = None,
     run_hooks: TaskRunHooks | None = None,
     agent_hooks: TaskAgentHooks | None = None,
 ) -> bool:
@@ -236,6 +255,8 @@ async def deploy_task_agents(
         agents: Mapping of agent name -> PersonalityDocument.
         prompt: User prompt to execute.
         api_type: OpenAI API type -- ``"chat_completions"`` or ``"responses"``.
+        endpoint: Optional per-model API endpoint URL override.
+        token: Optional env var name to resolve as the API token.
 
     Returns:
         True if the task completed successfully.
@@ -312,6 +333,8 @@ async def deploy_task_agents(
                     model=model,
                     model_settings=model_settings,
                     api_type=api_type,
+                    endpoint=endpoint,
+                    token=token,
                     run_hooks=run_hooks,
                     agent_hooks=agent_hooks,
                 ).agent
@@ -335,6 +358,8 @@ async def deploy_task_agents(
             model=model,
             model_settings=model_settings,
             api_type=api_type,
+            endpoint=endpoint,
+            token=token,
             run_hooks=run_hooks,
             agent_hooks=agent_hooks,
         )
@@ -463,8 +488,10 @@ async def run_main(
             if task.uses:
                 task = _merge_reusable_task(available_tools, task)
 
-            # Resolve model
-            model, model_settings = _resolve_task_model(task, model_keys, model_dict, models_params)
+            # Resolve model (name, settings, api_type, optional endpoint/token)
+            model, model_settings, task_api_type, task_endpoint, task_token = _resolve_task_model(
+                task, model_keys, model_dict, models_params, default_api_type=api_type,
+            )
 
             # Read task fields via typed attributes
             agents_list = task.agents or []
@@ -549,7 +576,9 @@ async def run_main(
                                     ),
                                     model=model,
                                     model_par=model_settings,
-                                    api_type=api_type,
+                                    api_type=task_api_type,
+                                    endpoint=task_endpoint,
+                                    token=task_token,
                                     agent_hooks=TaskAgentHooks(on_handoff=on_handoff_hook),
                                 )
 

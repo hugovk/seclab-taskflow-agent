@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: GitHub, Inc.
+# SPDX-License-Identifier: MIT
+
+# Example: per-model API type and endpoint configuration.
+# gpt_responses uses the Responses API on the CAPI endpoint,
+# reading its token from the CAPI_TOKEN env var.
+
+seclab-taskflow-agent:
+  version: "1.0"
+  filetype: model_config
+models:
+  gpt_responses: gpt-5.1
+model_settings:
+  gpt_responses:
+    api_type: responses
+    endpoint: https://api.githubcopilot.com
+    token: CAPI_TOKEN
