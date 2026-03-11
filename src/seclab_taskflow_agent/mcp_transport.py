@@ -166,7 +166,7 @@ class StreamableMCPThread(Thread):
             if self.exit_code not in _EXPECTED_EXIT_CODES:
                 self.exception = subprocess.CalledProcessError(self.exit_code, self.cmd)
 
-        except BaseException as e:
+        except Exception as e:
             self.exception = e
 
     def _read_stream(
@@ -248,7 +248,7 @@ class AsyncDebugMCPServerStdio(MCPServerStdio):
         try:
             asyncio.run_coroutine_threadsafe(super().cleanup(*args, **kwargs), self.t.loop).result()
         except asyncio.CancelledError:
-            pass
+            pass  # Swallow cancellation during cleanup shutdown
         finally:
             self.t.loop.stop()
             self.t.join()

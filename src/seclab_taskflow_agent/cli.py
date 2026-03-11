@@ -178,4 +178,4 @@ def main(
 # Legacy compatibility shim — implementation moved to prompt_parser.py
 # ---------------------------------------------------------------------------
 
-from .prompt_parser import parse_prompt_args  # noqa: F401, E402
+from .prompt_parser import parse_prompt_args as parse_prompt_args  # noqa: E402

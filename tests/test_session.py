@@ -5,7 +5,7 @@
 
 import pytest
 
-from seclab_taskflow_agent.session import CompletedTask, TaskflowSession, session_dir
+from seclab_taskflow_agent.session import CompletedTask, TaskflowSession
 
 
 class TestTaskflowSession:

@@ -119,10 +119,6 @@ def _merge_reusable_task(
     return TaskDefinition.model_validate(merged)
 
 
-# Keys in model_settings that are handled by the engine, not ModelSettings.
-_ENGINE_SETTING_KEYS = {"api_type", "endpoint", "token"}
-
-
 def _resolve_task_model(
     task: TaskDefinition,
     model_keys: list[str],

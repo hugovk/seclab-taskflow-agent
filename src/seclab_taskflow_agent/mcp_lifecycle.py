@@ -145,7 +145,7 @@ async def mcp_session_task(
         connected.set()
         await cleanup.wait()
 
-        for entry in reversed(entries):
+        for entry in list(reversed(entries)):
             try:
                 logging.debug(f"Starting cleanup for mcp server: {entry.server._name}")
                 await entry.server.cleanup()
@@ -158,8 +158,6 @@ async def mcp_session_task(
                         logging.warning(f"Streamable mcp server process exception: {e}")
             except asyncio.CancelledError:
                 logging.exception(f"Timeout on cleanup for mcp server: {entry.server._name}")
-            finally:
-                entries.remove(entry)
     except RuntimeError:
         logging.exception("RuntimeError in mcp session task")
     except asyncio.CancelledError:

@@ -81,8 +81,8 @@ class TaskDefinition(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    name: str = "taskflow"
-    description: str = "taskflow"
+    name: str = ""
+    description: str = ""
     agents: list[str] = Field(default_factory=list)
     user_prompt: str = ""
     run: str = ""

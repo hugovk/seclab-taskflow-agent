@@ -18,8 +18,9 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv(usecwd=True))
 
 # Re-export for backwards compatibility — some tests import from __main__
-from .prompt_parser import parse_prompt_args  # noqa: E402, F401
-from .runner import deploy_task_agents, run_main  # noqa: E402, F401
+from .prompt_parser import parse_prompt_args as parse_prompt_args  # noqa: E402
+from .runner import deploy_task_agents as deploy_task_agents  # noqa: E402
+from .runner import run_main as run_main  # noqa: E402
 
 if __name__ == "__main__":
     from .cli import app

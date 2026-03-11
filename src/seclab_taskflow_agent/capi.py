@@ -37,8 +37,7 @@ class AI_API_ENDPOINT_ENUM(StrEnum):
                 return f"https://{self}/inference"
             case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
                 return f"https://{self}/v1"
-            case _:
-                raise ValueError(f"Unsupported endpoint: {self}")
+        raise ValueError(f"Unsupported endpoint: {self}")
 
 
 COPILOT_INTEGRATION_ID = "vscode-chat"
@@ -114,25 +113,18 @@ def list_capi_models(token: str) -> dict[str, dict]:
 def supports_tool_calls(model: str, models: dict[str, dict]) -> bool:
     """Check whether the given model supports tool calls."""
     api_endpoint = get_AI_endpoint()
-    match urlparse(api_endpoint).netloc:
+    netloc = urlparse(api_endpoint).netloc
+    match netloc:
         case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
             return models.get(model, {}).get("capabilities", {}).get("supports", {}).get("tool_calls", False)
         case AI_API_ENDPOINT_ENUM.AI_API_MODELS_GITHUB:
             return "tool-calling" in models.get(model, {}).get("capabilities", [])
         case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
-            # OpenAI doesn't expose capabilities in the models list
-            # Check if model name indicates function calling support
-            model_lower = model.lower()
-            return any(
-                [
-                    "gpt-" in model_lower,
-                ]
-            )
-        case _:
-            raise ValueError(
-                f"Unsupported Model Endpoint: {api_endpoint}\n"
-                f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}"
-            )
+            return "gpt-" in model.lower()
+    raise ValueError(
+        f"Unsupported Model Endpoint: {api_endpoint}\n"
+        f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}"
+    )
 
 
 def list_tool_call_models(token: str) -> dict[str, dict]:
