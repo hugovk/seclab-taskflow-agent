@@ -24,13 +24,13 @@ You can find a detailed overview of the taskflow grammar [here](doc/GRAMMAR.md) 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                   CLI (cli.py)                      │
-│  Typer-based entry point: -p, -t, -l, -g KEY=VALUE │
+│  Typer-based entry point: -p, -t, -l, -g, --resume │
 └─────────────────────┬───────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────┐
 │              Runner (runner.py)                      │
 │  Taskflow execution loop, model resolution,          │
-│  template rendering, repeat-prompt iteration         │
+│  template rendering, session checkpointing           │
 └─────────────────────┬───────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────┐
@@ -45,6 +45,7 @@ You can find a detailed overview of the taskflow grammar [here](doc/GRAMMAR.md) 
 
 Supporting modules:
   models.py          — Pydantic v2 grammar models (validation)
+  session.py         — Task-level checkpoint / resume
   available_tools.py — YAML resource loader with caching
   template_utils.py  — Jinja2 template environment
   mcp_utils.py       — MCP client parameter resolution
@@ -79,6 +80,40 @@ Per-model `model_settings` can include:
 - **`api_type`** — `"chat_completions"` (default) or `"responses"`
 - **`endpoint`** — API base URL override for this model
 - **`token`** — name of an environment variable containing the API key
+
+### Session Recovery
+
+Taskflow runs are automatically checkpointed at the task level. If a task
+fails after exhausting retries, the session is saved and can be resumed:
+
+```
+** 🤖💾 Session saved: abc123def456
+** 🤖💡 Resume with: --resume abc123def456
+```
+
+Resume from the last successful checkpoint:
+
+```bash
+python -m seclab_taskflow_agent --resume abc123def456
+```
+
+Failed tasks are automatically retried up to 3 times with increasing backoff
+before the session is saved. Session checkpoints are stored in the
+platform-specific application data directory.
+
+### Error Output
+
+By default, errors are shown as concise one-line messages. Use `--debug` (or
+set `TASK_AGENT_DEBUG=1`) for full tracebacks:
+
+```bash
+# Concise (default)
+Error: [BadRequestError] model 'foo' not found
+(use --debug for full traceback)
+
+# Full traceback
+python -m seclab_taskflow_agent --debug -t examples.taskflows.echo
+```
 
 ## Use Cases and Examples
 
