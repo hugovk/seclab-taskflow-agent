@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
-# CAPI specific interactions
+"""AI API endpoint and token management (CAPI integration)."""
+
 import json
 import logging
 import os
@@ -9,6 +10,16 @@ from urllib.parse import urlparse
 
 import httpx
 from strenum import StrEnum
+
+__all__ = [
+    "AI_API_ENDPOINT_ENUM",
+    "COPILOT_INTEGRATION_ID",
+    "get_AI_endpoint",
+    "get_AI_token",
+    "list_capi_models",
+    "list_tool_call_models",
+    "supports_tool_calls",
+]
 
 
 # Enumeration of currently supported API endpoints.

@@ -178,7 +178,6 @@ ignore = [
   # Backwards-compatibility suppressions for existing code
   "A001",     # Variable shadows built-in (existing API names)
   "A002",     # Argument shadows built-in (existing API signatures)
-  "B006",     # Mutable default argument (existing signatures, would break API)
   "FBT001",   # Boolean positional arg (existing API)
   "FBT002",   # Boolean default value (existing API)
   "N802",     # Function name casing (existing API: get_AI_endpoint etc.)

@@ -10,6 +10,15 @@ and managing the agent lifecycle. Extracted from the original monolithic
 
 from __future__ import annotations
 
+__all__ = [
+    "DEFAULT_MAX_TURNS",
+    "MAX_API_RETRY",
+    "MAX_RATE_LIMIT_BACKOFF",
+    "RATE_LIMIT_BACKOFF",
+    "deploy_task_agents",
+    "run_main",
+]
+
 import asyncio
 import json
 import logging

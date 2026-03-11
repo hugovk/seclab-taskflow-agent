@@ -8,6 +8,8 @@ import logging
 
 from .path_utils import log_file_name
 
+__all__ = ["flush_async_output", "render_model_output"]
+
 async_output = {}
 async_output_lock = asyncio.Lock()
 

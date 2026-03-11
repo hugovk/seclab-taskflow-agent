@@ -10,6 +10,8 @@ model listing (-l), and global variables (-g KEY=VALUE).
 
 from __future__ import annotations
 
+__all__ = ["app", "main"]
+
 import asyncio
 import logging
 import os

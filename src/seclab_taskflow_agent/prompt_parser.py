@@ -17,8 +17,12 @@ import logging
 
 from .available_tools import AvailableTools
 
+__all__ = ["parse_prompt_args"]
 
-def parse_prompt_args(available_tools: AvailableTools, user_prompt: str | None = None):
+
+def parse_prompt_args(
+    available_tools: AvailableTools, user_prompt: str | None = None
+) -> tuple[str | None, str | None, bool, dict[str, str], str, str] | tuple[None, None, None, None, str]:
     """Legacy CLI parser kept for backwards compatibility with tests.
 
     Returns:

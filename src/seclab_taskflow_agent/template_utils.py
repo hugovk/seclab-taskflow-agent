@@ -8,8 +8,12 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 import jinja2
 
+__all__ = ["PromptLoader", "create_jinja_environment", "env_function", "render_template"]
+
 if TYPE_CHECKING:
     from .available_tools import AvailableTools
+
+from .available_tools import BadToolNameError
 
 
 class PromptLoader(jinja2.BaseLoader):
@@ -46,7 +50,9 @@ class PromptLoader(jinja2.BaseLoader):
             source = prompt_data.prompt or ""
             # Return: (source, filename, uptodate_func)
             return source, None, lambda: True
-        except Exception:
+        except jinja2.TemplateNotFound:
+            raise
+        except (BadToolNameError, KeyError, AttributeError, FileNotFoundError):
             raise jinja2.TemplateNotFound(template)
 
 

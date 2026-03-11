@@ -1,9 +1,15 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
+"""ASCII banner displayed at agent startup."""
+
 from .capi import get_AI_endpoint
 
-def get_banner():
+__all__ = ["get_banner"]
+
+
+def get_banner() -> str:
+    """Return the ASCII art startup banner with the configured endpoint."""
     api_endpoint = get_AI_endpoint()
     banner = f"""
     ╔══════════════════════════════════════════════════════════════════╗

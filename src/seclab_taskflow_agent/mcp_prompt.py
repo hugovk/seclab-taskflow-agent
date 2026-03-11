@@ -9,6 +9,8 @@ tools/resources, important guidelines, and server-supplied instructions.
 
 from __future__ import annotations
 
+__all__ = ["mcp_system_prompt"]
+
 
 def mcp_system_prompt(
     system_prompt: str,

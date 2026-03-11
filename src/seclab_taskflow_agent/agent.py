@@ -30,6 +30,13 @@ from openai import AsyncOpenAI
 
 from .capi import AI_API_ENDPOINT_ENUM, COPILOT_INTEGRATION_ID, get_AI_endpoint, get_AI_token
 
+__all__ = [
+    "DEFAULT_MODEL",
+    "TaskAgent",
+    "TaskAgentHooks",
+    "TaskRunHooks",
+]
+
 # grab our secrets from .env, this must be in .gitignore
 load_dotenv(find_dotenv(usecwd=True))
 
@@ -64,16 +71,19 @@ class TaskRunHooks(RunHooks):
         self._on_tool_end = on_tool_end
 
     async def on_agent_start(self, context: RunContextWrapper[TContext], agent: Agent[TContext]) -> None:
+        """Called when an agent begins execution."""
         logging.debug(f"TaskRunHooks on_agent_start: {agent.name}")
         if self._on_agent_start:
             await self._on_agent_start(context, agent)
 
     async def on_agent_end(self, context: RunContextWrapper[TContext], agent: Agent[TContext], output: Any) -> None:
+        """Called when an agent finishes execution."""
         logging.debug(f"TaskRunHooks on_agent_end: {agent.name}")
         if self._on_agent_end:
             await self._on_agent_end(context, agent, output)
 
     async def on_tool_start(self, context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool) -> None:
+        """Called before a tool invocation begins."""
         logging.debug(f"TaskRunHooks on_tool_start: {tool.name}")
         if self._on_tool_start:
             await self._on_tool_start(context, agent, tool)
@@ -81,6 +91,7 @@ class TaskRunHooks(RunHooks):
     async def on_tool_end(
         self, context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool, result: str
     ) -> None:
+        """Called after a tool invocation completes."""
         logging.debug(f"TaskRunHooks on_tool_end: {tool.name} ")
         if self._on_tool_end:
             await self._on_tool_end(context, agent, tool, result)
@@ -107,21 +118,25 @@ class TaskAgentHooks(AgentHooks):
     async def on_handoff(
         self, context: RunContextWrapper[TContext], agent: Agent[TContext], source: Agent[TContext]
     ) -> None:
+        """Called when control is handed off from one agent to another."""
         logging.debug(f"TaskAgentHooks on_handoff: {source.name} -> {agent.name}")
         if self._on_handoff:
             await self._on_handoff(context, agent, source)
 
     async def on_start(self, context: RunContextWrapper[TContext], agent: Agent[TContext]) -> None:
+        """Called when the agent starts processing."""
         logging.debug(f"TaskAgentHooks on_start: {agent.name}")
         if self._on_start:
             await self._on_start(context, agent)
 
     async def on_end(self, context: RunContextWrapper[TContext], agent: Agent[TContext], output: Any) -> None:
+        """Called when the agent finishes processing."""
         logging.debug(f"TaskAgentHooks on_end: {agent.name}")
         if self._on_end:
             await self._on_end(context, agent, output)
 
     async def on_tool_start(self, context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool) -> None:
+        """Called before a tool invocation begins."""
         logging.debug(f"TaskAgentHooks on_tool_start: {tool.name}")
         if self._on_tool_start:
             await self._on_tool_start(context, agent, tool)
@@ -129,6 +144,7 @@ class TaskAgentHooks(AgentHooks):
     async def on_tool_end(
         self, context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool, result: str
     ) -> None:
+        """Called after a tool invocation completes."""
         logging.debug(f"TaskAgentHooks on_tool_end: {tool.name}")
         if self._on_tool_end:
             await self._on_tool_end(context, agent, tool, result)
@@ -145,9 +161,9 @@ class TaskAgent:
         self,
         name: str = "TaskAgent",
         instructions: str = "",
-        handoffs: list[Any] = [],
+        handoffs: list[Any] | None = None,
         exclude_from_context: bool = False,
-        mcp_servers: list[Any] = [],
+        mcp_servers: list[Any] | None = None,
         model: str = DEFAULT_MODEL,
         model_settings: ModelSettings | None = None,
         api_type: str = "chat_completions",
@@ -199,8 +215,8 @@ class TaskAgent:
             instructions=instructions,
             tool_use_behavior=_ToolsToFinalOutputFunction if exclude_from_context else "run_llm_again",
             model=model_impl,
-            handoffs=handoffs,
-            mcp_servers=mcp_servers,
+            handoffs=handoffs or [],
+            mcp_servers=mcp_servers or [],
             model_settings=model_settings or ModelSettings(),
             hooks=agent_hooks or TaskAgentHooks(),
         )

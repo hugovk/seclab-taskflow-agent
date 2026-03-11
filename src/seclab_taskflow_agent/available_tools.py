@@ -9,6 +9,8 @@ YAML files, validating them against Pydantic grammar models at parse time.
 
 from __future__ import annotations
 
+__all__ = ["AvailableTools"]
+
 import importlib.resources
 from enum import Enum
 from typing import Union

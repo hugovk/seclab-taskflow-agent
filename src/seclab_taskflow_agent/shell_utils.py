@@ -1,11 +1,15 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
+"""Shell command execution utilities."""
+
 import logging
 import subprocess
 import tempfile
 
 from mcp.types import CallToolResult, TextContent
+
+__all__ = ["shell_command_to_string", "shell_exec_with_temporary_file", "shell_tool_call"]
 
 
 def shell_command_to_string(cmd: list[str]) -> str:

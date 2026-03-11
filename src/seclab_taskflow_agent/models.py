@@ -10,6 +10,21 @@ while maintaining full backwards compatibility with existing YAML files.
 
 from __future__ import annotations
 
+__all__ = [
+    "ApiType",
+    "DOCUMENT_MODELS",
+    "ModelConfigDocument",
+    "PersonalityDocument",
+    "PromptDocument",
+    "SUPPORTED_VERSION",
+    "ServerParams",
+    "TaskDefinition",
+    "TaskWrapper",
+    "TaskflowDocument",
+    "TaskflowHeader",
+    "ToolboxDocument",
+]
+
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
