@@ -44,13 +44,41 @@ You can find a detailed overview of the taskflow grammar [here](doc/GRAMMAR.md) 
 └─────────────────────────────────────────────────────┘
 
 Supporting modules:
-  models.py        — Pydantic v2 grammar models (validation)
+  models.py          — Pydantic v2 grammar models (validation)
   available_tools.py — YAML resource loader with caching
   template_utils.py  — Jinja2 template environment
-  mcp_utils.py       — MCP namespace wrapping, system prompts
-  capi.py            — AI API endpoint management
+  mcp_utils.py       — MCP client parameter resolution
+  mcp_transport.py   — MCP transport implementations (stdio, streamable)
+  mcp_prompt.py      — System prompt construction
+  prompt_parser.py   — Legacy prompt argument parser
+  capi.py            — AI API endpoint and token management
   path_utils.py      — Platform-aware data/log directories
 ```
+
+### API Types
+
+The agent supports both the **Chat Completions** and **Responses** OpenAI APIs.
+The API type can be configured globally or per model in a `model_config` file:
+
+```yaml
+seclab-taskflow-agent:
+  version: "1.0"
+  filetype: model_config
+api_type: chat_completions        # default for all models
+models:
+  gpt_default: gpt-4.1
+  gpt_responses: gpt-5.1
+model_settings:
+  gpt_responses:
+    api_type: responses           # override for this model
+    endpoint: https://api.githubcopilot.com
+    token: CAPI_TOKEN             # env var name containing the API key
+```
+
+Per-model `model_settings` can include:
+- **`api_type`** — `"chat_completions"` (default) or `"responses"`
+- **`endpoint`** — API base URL override for this model
+- **`token`** — name of an environment variable containing the API key
 
 ## Use Cases and Examples
 
