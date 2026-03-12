@@ -198,7 +198,7 @@ async def _build_prompts_to_run(
         if "result" not in task_prompt.lower():
             logging.warning("repeat_prompt enabled but no {{ result }} in prompt")
         try:
-            last_result = json.loads(last_mcp_tool_results.pop())
+            last_result = json.loads(last_mcp_tool_results[-1])
             text = last_result.get("text", "")
             try:
                 iterable_result = json.loads(text)
@@ -213,6 +213,9 @@ async def _build_prompts_to_run(
         except IndexError:
             logging.critical("No last MCP tool result available")
             raise
+
+        # Consume only after successful parse
+        last_mcp_tool_results.pop()
 
         if not iterable_result:
             await render_model_output("** 🤖❗MCP tool result iterable is empty!\n")
@@ -689,14 +692,6 @@ async def run_main(
                     )
                     raise last_task_error
 
-                # Checkpoint after successful task
-                session.record_task(
-                    index=task_index,
-                    name=task_name,
-                    success=task_complete,
-                    tool_results=list(last_mcp_tool_results),
-                )
-
                 if must_complete and not task_complete:
                     logging.critical("Required task not completed ... aborting!")
                     await render_model_output("🤖💥 *Required task not completed ...\n")
@@ -706,6 +701,15 @@ async def run_main(
                         f"** 🤖💡 Resume with: --resume {session.session_id}\n"
                     )
                     break
+
+                # Checkpoint after task (must_complete failures break above
+                # without advancing the resume cursor)
+                session.record_task(
+                    index=task_index,
+                    name=task_name,
+                    success=task_complete,
+                    tool_results=list(last_mcp_tool_results),
+                )
 
         # All tasks completed successfully
         if session is not None and not session.error:

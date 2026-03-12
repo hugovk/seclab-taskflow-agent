@@ -66,7 +66,7 @@ def parse_prompt_args(
         for g in args[0].globals:
             if "=" not in g:
                 logging.error(f"Invalid global variable format: {g}. Expected KEY=VALUE")
-                return None, None, None, None, None, help_msg
+                return None, None, None, None, "", help_msg
             key, value = g.split("=", 1)
             cli_globals[key.strip()] = value.strip()
 
