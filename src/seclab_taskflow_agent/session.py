@@ -99,8 +99,7 @@ class TaskflowSession(BaseModel):
                 tool_results=tool_results or [],
             )
         )
-        if tool_results:
-            self.last_tool_results = list(tool_results)
+        self.last_tool_results = list(tool_results or [])
         self.save()
 
     def mark_finished(self) -> None:

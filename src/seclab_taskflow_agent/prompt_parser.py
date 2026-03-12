@@ -54,6 +54,9 @@ def parse_prompt_args(
         if e.code == 2:
             logging.exception(f"User provided incomplete prompt: {user_prompt}")
         return None, None, None, None, "", help_msg
+    except Exception:
+        logging.exception(f"Failed to parse prompt: {user_prompt}")
+        return None, None, None, None, "", help_msg
     p = args[0].p.strip() if args[0].p else None
     t = args[0].t.strip() if args[0].t else None
     list_models = args[0].l

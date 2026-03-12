@@ -33,11 +33,12 @@ MCP_CLEANUP_TIMEOUT = 5
 class MCPServerEntry:
     """A paired MCP server wrapper and optional local process."""
 
-    __slots__ = ("server", "process")
+    __slots__ = ("server", "process", "name")
 
-    def __init__(self, server: MCPNamespaceWrap, process: StreamableMCPThread | None = None):
+    def __init__(self, server: MCPNamespaceWrap, process: StreamableMCPThread | None = None, name: str = ""):
         self.server = server
         self.process = process
+        self.name = name
 
 
 def build_mcp_servers(
@@ -117,7 +118,7 @@ def build_mcp_servers(
             case _:
                 raise ValueError(f"Unsupported MCP transport: {params['kind']}")
 
-        entries.append(MCPServerEntry(MCPNamespaceWrap(confirms, mcp_server), server_proc))
+        entries.append(MCPServerEntry(MCPNamespaceWrap(confirms, mcp_server), server_proc, name=tb))
 
     return entries
 
@@ -136,7 +137,7 @@ async def mcp_session_task(
     """
     try:
         for entry in entries:
-            logging.debug(f"Connecting mcp server: {entry.server._name}")
+            logging.debug(f"Connecting mcp server: {entry.name}")
             if entry.process is not None:
                 entry.process.start()
                 await entry.process.async_wait_for_connection(poll_interval=0.1)
@@ -147,9 +148,9 @@ async def mcp_session_task(
 
         for entry in list(reversed(entries)):
             try:
-                logging.debug(f"Starting cleanup for mcp server: {entry.server._name}")
+                logging.debug(f"Starting cleanup for mcp server: {entry.name}")
                 await entry.server.cleanup()
-                logging.debug(f"Cleaned up mcp server: {entry.server._name}")
+                logging.debug(f"Cleaned up mcp server: {entry.name}")
                 if entry.process is not None:
                     entry.process.stop()
                     try:
@@ -157,7 +158,7 @@ async def mcp_session_task(
                     except Exception as e:
                         logging.warning(f"Streamable mcp server process exception: {e}")
             except asyncio.CancelledError:
-                logging.exception(f"Timeout on cleanup for mcp server: {entry.server._name}")
+                logging.exception(f"Timeout on cleanup for mcp server: {entry.name}")
     except RuntimeError:
         logging.exception("RuntimeError in mcp session task")
     except asyncio.CancelledError:

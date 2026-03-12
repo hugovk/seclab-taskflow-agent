@@ -603,6 +603,12 @@ async def run_main(
                                 raise ValueError(f"No such personality: {agent_name}")
                             resolved_agents[agent_name] = personality
 
+                        if not resolved_agents:
+                            raise ValueError(
+                                "No agents resolved for this task. "
+                                "Specify a personality with -p or provide an agents list."
+                            )
+
                         async def _deploy(ra: dict, pp: str) -> bool:
                             async with semaphore:
                                 return await deploy_task_agents(

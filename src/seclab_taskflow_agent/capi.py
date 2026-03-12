@@ -37,7 +37,8 @@ class AI_API_ENDPOINT_ENUM(StrEnum):
                 return f"https://{self}/inference"
             case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
                 return f"https://{self}/v1"
-        raise ValueError(f"Unsupported endpoint: {self}")
+            case _:
+                raise ValueError(f"Unsupported endpoint: {self}")
 
 
 COPILOT_INTEGRATION_ID = "vscode-chat"
@@ -121,10 +122,11 @@ def supports_tool_calls(model: str, models: dict[str, dict]) -> bool:
             return "tool-calling" in models.get(model, {}).get("capabilities", [])
         case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
             return "gpt-" in model.lower()
-    raise ValueError(
-        f"Unsupported Model Endpoint: {api_endpoint}\n"
-        f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}"
-    )
+        case _:
+            raise ValueError(
+                f"Unsupported Model Endpoint: {api_endpoint}\n"
+                f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}"
+            )
 
 
 def list_tool_call_models(token: str) -> dict[str, dict]:

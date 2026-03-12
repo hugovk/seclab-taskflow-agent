@@ -19,8 +19,6 @@ from agents import (
     TContext,
     Tool,
     result,
-    set_default_openai_api,
-    set_default_openai_client,
     set_tracing_disabled,
 )
 from agents.agent import FunctionToolResult, ModelSettings, ToolsToFinalOutputResult
@@ -193,8 +191,6 @@ class TaskAgent:
             api_key=resolved_token,
             default_headers={"Copilot-Integration-Id": COPILOT_INTEGRATION_ID},
         )
-        set_default_openai_client(client)
-        set_default_openai_api(api_type)
         set_tracing_disabled(True)
         self.run_hooks = run_hooks or TaskRunHooks()
 
