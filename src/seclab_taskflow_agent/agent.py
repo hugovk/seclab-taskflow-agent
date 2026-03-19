@@ -41,10 +41,7 @@ match urlparse(api_endpoint).netloc:
     case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
         default_model = "gpt-4o"
     case _:
-        raise ValueError(
-            f"Unsupported Model Endpoint: {api_endpoint}\n"
-            f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}"
-        )
+        default_model = "please-set-default-model-via-env"
 
 DEFAULT_MODEL = os.getenv("COPILOT_DEFAULT_MODEL", default=default_model)
 
@@ -105,7 +102,8 @@ class TaskAgentHooks(AgentHooks):
     async def on_handoff(
         self, context: RunContextWrapper[TContext], agent: Agent[TContext], source: Agent[TContext]
     ) -> None:
-        logging.debug(f"TaskAgentHooks on_handoff: {source.name} -> {agent.name}")
+        logging.debug(
+            f"TaskAgentHooks on_handoff: {source.name} -> {agent.name}")
         if self._on_handoff:
             await self._on_handoff(context, agent, source)
 
@@ -169,7 +167,8 @@ class TaskAgent:
             name=name,
             instructions=instructions,
             tool_use_behavior=_ToolsToFinalOutputFunction if exclude_from_context else "run_llm_again",
-            model=OpenAIChatCompletionsModel(model=model, openai_client=client),
+            model=OpenAIChatCompletionsModel(
+                model=model, openai_client=client),
             handoffs=handoffs,
             mcp_servers=mcp_servers,
             model_settings=model_settings or ModelSettings(),
