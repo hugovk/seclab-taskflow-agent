@@ -24,9 +24,9 @@ async def flush_async_output(task_id: str) -> None:
     """Flush buffered async output for *task_id* to the console."""
     async with async_output_lock:
         if task_id not in async_output:
-            raise ValueError(f"No async output for task: {task_id}")
-        data = async_output[task_id]
-        del async_output[task_id]
+            # No buffered output (agent may have failed before producing any).
+            return
+        data = async_output.pop(task_id)
     await render_model_output(f"** 🤖✏️ Output for async task: {task_id}\n\n")
     await render_model_output(data)
 

@@ -80,9 +80,10 @@ def _resolve_model_config(
     models_params: dict[str, dict[str, Any]] = m_config.model_settings or {}
     if models_params and not isinstance(models_params, dict):
         raise ValueError(f"Settings section of model_config file {model_config_ref} must be a dictionary")
-    if not set(models_params.keys()).difference(model_keys).issubset(set()):
+    unknown = set(models_params) - set(model_keys)
+    if unknown:
         raise ValueError(
-            f"Settings section of model_config file {model_config_ref} contains models not in the model section"
+            f"Settings section of model_config file {model_config_ref} contains models not in the model section: {unknown}"
         )
     for k, v in models_params.items():
         if not isinstance(v, dict):
@@ -199,19 +200,23 @@ async def _build_prompts_to_run(
             logging.warning("repeat_prompt enabled but no {{ result }} in prompt")
         try:
             last_result = json.loads(last_mcp_tool_results[-1])
-            text = last_result.get("text", "")
-            try:
-                iterable_result = json.loads(text)
-            except json.JSONDecodeError as exc:
-                logging.critical(f"Could not parse result text: {text}")
-                raise ValueError("Result text is not valid JSON") from exc
-            try:
-                iter(iterable_result)
-            except TypeError:
-                logging.critical("Last MCP tool result is not iterable")
-                raise
         except IndexError:
             logging.critical("No last MCP tool result available")
+            raise
+        except json.JSONDecodeError as exc:
+            logging.critical(f"Could not parse tool result as JSON: {last_mcp_tool_results[-1][:200]}")
+            raise ValueError("Tool result is not valid JSON") from exc
+
+        text = last_result.get("text", "")
+        try:
+            iterable_result = json.loads(text)
+        except json.JSONDecodeError as exc:
+            logging.critical(f"Could not parse result text: {text}")
+            raise ValueError("Result text is not valid JSON") from exc
+        try:
+            iter(iterable_result)
+        except TypeError:
+            logging.critical("Last MCP tool result is not iterable")
             raise
 
         if not iterable_result:

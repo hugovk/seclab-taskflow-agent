@@ -99,9 +99,14 @@ def list_capi_models(token: str) -> dict[str, dict]:
             case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
                 models_list = r.json().get("data", [])
             case _:
-                # Unknown endpoint — try OpenAI-style {"data": [...]}
+                # Unknown endpoint — try common response shapes
                 body = r.json()
-                models_list = body.get("data", body) if isinstance(body, dict) else body
+                if isinstance(body, dict):
+                    models_list = body.get("data", [])
+                elif isinstance(body, list):
+                    models_list = body
+                else:
+                    models_list = []
         for model in models_list:
             models[model.get("id")] = dict(model)
     except httpx.RequestError:

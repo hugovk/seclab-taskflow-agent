@@ -128,7 +128,7 @@ class TaskflowSession(BaseModel):
     def list_sessions(cls) -> list[TaskflowSession]:
         """List all saved sessions, most recent first."""
         sessions: list[TaskflowSession] = []
-        for f in sorted(session_dir().glob("*.json"), reverse=True):
+        for f in sorted(session_dir().glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
             try:
                 sessions.append(cls.model_validate_json(f.read_text()))
             except Exception:

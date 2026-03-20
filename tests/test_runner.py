@@ -237,7 +237,7 @@ class TestResolveTaskModel:
         )
         assert api_type == "responses"
         assert endpoint == "https://custom.api"
-        assert token == "secret"
+        assert token == "secret"  # noqa: S105
         assert "api_type" not in settings
         assert "endpoint" not in settings
         assert "token" not in settings
