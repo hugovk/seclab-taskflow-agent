@@ -214,9 +214,6 @@ async def _build_prompts_to_run(
             logging.critical("No last MCP tool result available")
             raise
 
-        # Consume only after successful parse
-        last_mcp_tool_results.pop()
-
         if not iterable_result:
             await render_model_output("** 🤖❗MCP tool result iterable is empty!\n")
         else:
@@ -234,6 +231,10 @@ async def _build_prompts_to_run(
                 except jinja2.TemplateError as e:
                     logging.error(f"Error rendering template for result {value}: {e}")
                     raise ValueError(f"Template rendering failed: {e}")
+
+        # Consume only after all prompts rendered successfully so that
+        # the result remains available for retry/resume on failure.
+        last_mcp_tool_results.pop()
     else:
         prompts_to_run.append(task_prompt)
     return prompts_to_run

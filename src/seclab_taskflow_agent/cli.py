@@ -113,7 +113,7 @@ def main(
 ) -> None:
     """Run a taskflow or personality-based agent session."""
     # Debug mode from flag or env var
-    debug = debug or bool(os.getenv("TASK_AGENT_DEBUG"))
+    debug = debug or os.getenv("TASK_AGENT_DEBUG", "").strip().lower() in ("1", "true", "yes")
 
     # Validate mutual exclusivity (resume is standalone)
     if resume and (personality or taskflow or list_models):

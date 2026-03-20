@@ -79,10 +79,8 @@ def list_capi_models(token: str) -> dict[str, dict]:
             case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
                 models_catalog = "models"
             case _:
-                raise ValueError(
-                    f"Unsupported Model Endpoint: {api_endpoint}\n"
-                    f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}"
-                )
+                # Unknown endpoint — try the OpenAI-style models catalog
+                models_catalog = "models"
         r = httpx.get(
             httpx.URL(api_endpoint).join(models_catalog),
             headers={
@@ -100,6 +98,10 @@ def list_capi_models(token: str) -> dict[str, dict]:
                 models_list = r.json()
             case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
                 models_list = r.json().get("data", [])
+            case _:
+                # Unknown endpoint — try OpenAI-style {"data": [...]}
+                body = r.json()
+                models_list = body.get("data", body) if isinstance(body, dict) else body
         for model in models_list:
             models[model.get("id")] = dict(model)
     except httpx.RequestError:
@@ -123,10 +125,9 @@ def supports_tool_calls(model: str, models: dict[str, dict]) -> bool:
         case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
             return "gpt-" in model.lower()
         case _:
-            raise ValueError(
-                f"Unsupported Model Endpoint: {api_endpoint}\n"
-                f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}"
-            )
+            # Unknown endpoint — optimistically assume tool-call support
+            # if the model is present in the catalog.
+            return model in models
 
 
 def list_tool_call_models(token: str) -> dict[str, dict]:
