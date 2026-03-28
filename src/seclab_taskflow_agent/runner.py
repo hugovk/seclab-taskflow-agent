@@ -31,7 +31,7 @@ from agents import Agent, RunContextWrapper, TContext, Tool
 from agents.agent import ModelSettings
 from agents.exceptions import AgentsException, MaxTurnsExceeded
 from agents.extensions.handoff_prompt import prompt_with_handoff_instructions
-from openai import APITimeoutError, BadRequestError, RateLimitError
+from openai import APIConnectionError, APITimeoutError, BadRequestError, RateLimitError
 from openai.types.responses import ResponseTextDeltaEvent
 
 from .agent import DEFAULT_MODEL, TaskAgent, TaskAgentHooks, TaskRunHooks
@@ -74,20 +74,13 @@ def _resolve_model_config(
     """
     m_config: ModelConfigDocument = available_tools.get_model_config(model_config_ref)
     model_dict: dict[str, str] = m_config.models or {}
-    if model_dict and not isinstance(model_dict, dict):
-        raise ValueError(f"Models section of the model_config file {model_config_ref} must be a dictionary")
     model_keys: list[str] = list(model_dict.keys())
     models_params: dict[str, dict[str, Any]] = m_config.model_settings or {}
-    if models_params and not isinstance(models_params, dict):
-        raise ValueError(f"Settings section of model_config file {model_config_ref} must be a dictionary")
     unknown = set(models_params) - set(model_keys)
     if unknown:
         raise ValueError(
             f"Settings section of model_config file {model_config_ref} contains models not in the model section: {unknown}"
         )
-    for k, v in models_params.items():
-        if not isinstance(v, dict):
-            raise ValueError(f"Settings for model {k} in model_config file {model_config_ref} is not a dictionary")
     return model_keys, model_dict, models_params, m_config.api_type
 
 
@@ -299,10 +292,17 @@ async def deploy_task_agents(
     # Model settings
     parallel_tool_calls = bool(os.getenv("MODEL_PARALLEL_TOOL_CALLS"))
     model_params: dict[str, Any] = {
-        "temperature": os.getenv("MODEL_TEMP", default=0.0),
         "tool_choice": "auto" if toolboxes else None,
         "parallel_tool_calls": parallel_tool_calls if toolboxes else None,
     }
+    # Only inject a default temperature for chat_completions; the responses
+    # API rejects unsupported parameters.  MODEL_TEMP env override applies
+    # to both API types.
+    model_temp = os.getenv("MODEL_TEMP")
+    if model_temp is not None:
+        model_params["temperature"] = model_temp
+    elif api_type != "responses":
+        model_params["temperature"] = 0.0
     model_params.update(model_par)
     model_settings = ModelSettings(**model_params)
 
@@ -660,7 +660,11 @@ async def run_main(
                         complete = result and complete
                     return complete
 
-                # Execute the task with auto-retry on failure
+                # Execute the task with auto-retry on transient failures.
+                # Only retry on network/API errors — deterministic failures
+                # and errors after side-effectful work should not be retried
+                # blindly (e.g. repeat_prompt tasks may have already written
+                # data to external systems).
                 task_name = task.name or f"task-{task_index}"
                 task_complete = False
                 last_task_error: BaseException | None = None
@@ -675,7 +679,7 @@ async def run_main(
                         break
                     except (KeyboardInterrupt, SystemExit):
                         raise
-                    except Exception as exc:
+                    except (APIConnectionError, APITimeoutError, ConnectionError, TimeoutError) as exc:
                         last_task_error = exc
                         remaining = TASK_RETRY_LIMIT - attempt - 1
                         if remaining > 0:
@@ -688,6 +692,10 @@ async def run_main(
                             await asyncio.sleep(backoff)
                         else:
                             logging.error(f"Task {task_name!r} failed after {TASK_RETRY_LIMIT} attempts: {exc}")
+                    except Exception as exc:
+                        last_task_error = exc
+                        logging.error(f"Task {task_name!r} failed (non-retriable): {exc}")
+                        break
 
                 # If all retries exhausted with an exception, save and re-raise
                 if last_task_error is not None:

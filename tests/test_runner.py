@@ -107,14 +107,10 @@ class TestResolveModelConfig:
         assert params == {"m1": {"temperature": 0.5}}
 
     def test_validation_error_on_non_dict_settings(self):
-        """Non-dict model_settings raises ValueError."""
-        at = _mock_available_tools()
-        cfg = _make_model_config(models={"m1": "p-m1"})
-        # Manually set model_settings to a non-dict after construction
-        object.__setattr__(cfg, "model_settings", "not-a-dict")
-        at.get_model_config.return_value = cfg
-        with pytest.raises(ValueError, match="must be a dictionary"):
-            _resolve_model_config(at, "ref")
+        """Pydantic rejects non-dict model_settings at parse time."""
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            _make_model_config(models={"m1": "p-m1"}, model_settings="not-a-dict")
 
 
 # ===================================================================

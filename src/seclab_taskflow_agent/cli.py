@@ -43,7 +43,6 @@ def _parse_global(value: str) -> tuple[str, str]:
 
 def _setup_logging() -> None:
     """Configure root logger: file (DEBUG) + console (ERROR)."""
-    import os
     from logging.handlers import RotatingFileHandler
 
     root = logging.getLogger("")
@@ -68,8 +67,6 @@ def _print_concise_error(exc: BaseException) -> None:
     Walks the exception cause chain and prints each error on a single
     line.  Use ``--debug`` or ``TASK_AGENT_DEBUG=1`` for full tracebacks.
     """
-    import typer
-
     seen: set[int] = set()
     current: BaseException | None = exc
     while current and id(current) not in seen:
