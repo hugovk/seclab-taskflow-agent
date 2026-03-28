@@ -32,7 +32,7 @@ def get_banner():
     ║                        TASKFLOW AGENT                            ║
     ║                                                                  ║
     ╠══════════════════════════════════════════════════════════════════╣
-    ║ AI API Endpoint: {api_endpoint:<48}║
+    ║ Default AI API Endpoint: {api_endpoint:<48}║
     ╚══════════════════════════════════════════════════════════════════╝
     """
     return banner
