@@ -1,8 +1,11 @@
 # GitHub Security Lab Taskflow Agent
 
-The Security Lab Taskflow Agent is an MCP enabled multi-Agent framework.
+The Security Lab Taskflow Agent is an MCP-enabled multi-Agent framework for
+declarative, YAML-driven agentic workflows.
 
-The Taskflow Agent is built on top of the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/).
+Built on top of the [OpenAI Agents SDK](https://openai.github.io/openai-agents-python/),
+it uses [Pydantic](https://docs.pydantic.dev/) for grammar validation and
+[Jinja2](https://jinja.palletsprojects.com/) for template rendering.
 
 ## Core Concepts
 
@@ -15,6 +18,115 @@ Agents are defined through [personalities](examples/personalities/), that receiv
 Agents can cooperate to complete sequences of tasks through so-called [taskflows](doc/GRAMMAR.md).
 
 You can find a detailed overview of the taskflow grammar [here](doc/GRAMMAR.md) and example taskflows [here](examples/taskflows/).
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   CLI (cli.py)                      │
+│  Typer-based entry point: -p, -t, -l, -g, --resume │
+└─────────────────────┬───────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────┐
+│              Runner (runner.py)                      │
+│  Taskflow execution loop, model resolution,          │
+│  template rendering, session checkpointing           │
+└─────────────────────┬───────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────┐
+│          MCP Lifecycle (mcp_lifecycle.py)            │
+│  Server connection, cleanup, process management      │
+└─────────────────────┬───────────────────────────────┘
+                      │
+┌─────────────────────▼───────────────────────────────┐
+│            Agent (agent.py)                          │
+│  TaskAgent wrapper, hooks, OpenAI Agents SDK bridge  │
+└─────────────────────────────────────────────────────┘
+
+Supporting modules:
+  models.py          — Pydantic v2 grammar models (validation)
+  session.py         — Task-level checkpoint / resume
+  available_tools.py — YAML resource loader with caching
+  template_utils.py  — Jinja2 template environment
+  mcp_utils.py       — MCP client parameter resolution
+  mcp_transport.py   — MCP transport implementations (stdio, streamable)
+  mcp_prompt.py      — System prompt construction
+  prompt_parser.py   — Legacy prompt argument parser
+  capi.py            — AI API endpoint and token management
+  path_utils.py      — Platform-aware data/log directories
+```
+
+### API Types
+
+The agent supports both the **Chat Completions** and **Responses** OpenAI APIs.
+The API type can be configured globally or per model in a `model_config` file:
+
+```yaml
+seclab-taskflow-agent:
+  version: "1.0"
+  filetype: model_config
+api_type: chat_completions        # default for all models
+models:
+  gpt_default: gpt-4.1
+  gpt_responses: gpt-5.1
+model_settings:
+  gpt_responses:
+    api_type: responses           # override for this model
+    endpoint: https://api.githubcopilot.com
+    token: CAPI_TOKEN             # env var name containing the API key
+```
+
+Per-model `model_settings` can include:
+- **`api_type`** — `"chat_completions"` (default) or `"responses"`
+- **`endpoint`** — API base URL override for this model
+- **`token`** — name of an environment variable containing the API key
+
+### Session Recovery
+
+Taskflow runs are automatically checkpointed at the task level. If a task
+fails after exhausting retries, the session is saved and can be resumed:
+
+```
+** 🤖💾 Session saved: abc123def456
+** 🤖💡 Resume with: --resume abc123def456
+```
+
+Resume from the last successful checkpoint:
+
+```bash
+python -m seclab_taskflow_agent --resume abc123def456
+```
+
+Failed tasks are automatically retried up to 3 times with increasing backoff
+before the session is saved. Session checkpoints are stored in the
+platform-specific application data directory.
+
+### Error Output
+
+By default, errors are shown as concise one-line messages. Use `--debug` (or
+set `TASK_AGENT_DEBUG=1`) for full tracebacks:
+
+```bash
+# Concise (default)
+Error: [BadRequestError] model 'foo' not found
+(use --debug for full traceback)
+
+# Full traceback
+python -m seclab_taskflow_agent --debug -t examples.taskflows.echo
+```
+
+### MCP Environment Denylist
+
+By default, MCP server subprocesses inherit the parent environment. To prevent
+specific variables from leaking to MCP servers, set `TASKFLOW_ENV_DENYLIST` to
+a comma-separated list of variable names:
+
+```bash
+export TASKFLOW_ENV_DENYLIST="MY_SECRET_TOKEN,PRIVATE_KEY,OTHER_CREDENTIAL"
+```
+
+Toolbox-level `env:` declarations in YAML still inject exactly what each server
+needs, so explicitly configured variables are unaffected.
 
 ## Use Cases and Examples
 

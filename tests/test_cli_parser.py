@@ -19,12 +19,12 @@ class TestCliGlobals:
 
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(available_tools, "-t example -g fruit=apples")
+        p, t, _l, cli_globals, user_prompt, _ = parse_prompt_args(available_tools, "-t example -g fruit=apples")
 
         assert t == "example"
         assert cli_globals == {"fruit": "apples"}
         assert p is None
-        assert l is False
+        assert _l is False
 
     def test_parse_multiple_globals(self):
         """Test parsing multiple global variables from command line."""
@@ -32,14 +32,14 @@ class TestCliGlobals:
 
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(
+        p, t, _l, cli_globals, user_prompt, _ = parse_prompt_args(
             available_tools, "-t example -g fruit=apples -g color=red"
         )
 
         assert t == "example"
         assert cli_globals == {"fruit": "apples", "color": "red"}
         assert p is None
-        assert l is False
+        assert _l is False
 
     def test_parse_global_with_spaces(self):
         """Test parsing global variables with spaces in values."""
@@ -47,7 +47,7 @@ class TestCliGlobals:
 
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(available_tools, "-t example -g message=hello world")
+        p, t, _l, cli_globals, user_prompt, _ = parse_prompt_args(available_tools, "-t example -g message=hello world")
 
         assert t == "example"
         # "world" becomes part of the prompt, not the value
@@ -60,7 +60,7 @@ class TestCliGlobals:
 
         available_tools = AvailableTools()
 
-        p, t, l, cli_globals, user_prompt, _ = parse_prompt_args(available_tools, "-t example -g equation=x=5")
+        p, t, _l, cli_globals, user_prompt, _ = parse_prompt_args(available_tools, "-t example -g equation=x=5")
 
         assert t == "example"
         assert cli_globals == {"equation": "x=5"}
@@ -70,8 +70,8 @@ class TestCliGlobals:
         available_tools = AvailableTools()
 
         taskflow = available_tools.get_taskflow("tests.data.test_globals_taskflow")
-        assert "globals" in taskflow
-        assert taskflow["globals"]["test_var"] == "default_value"
+        assert taskflow.globals is not None
+        assert taskflow.globals["test_var"] == "default_value"
 
 
 if __name__ == "__main__":

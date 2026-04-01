@@ -3,6 +3,7 @@
 
 # a query-server2 codeql client
 import json
+import logging
 import os
 import re
 import subprocess

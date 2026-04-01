@@ -1,241 +1,80 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
-import asyncio
+"""MCP client utilities.
+
+Provides tool-name compression, namespace-aware MCP wrappers with
+confirmation support, and toolbox parameter resolution.
+"""
+
+from __future__ import annotations
+
+__all__ = [
+    "COMPRESSED_NAME_LENGTH",
+    "DEFAULT_MCP_CLIENT_SESSION_TIMEOUT",
+    "MCPNamespaceWrap",
+    "compress_name",
+    "mcp_client_params",
+]
+
 import hashlib
 import json
 import logging
-import os
 import shutil
-import socket
-import subprocess
-import time
-from collections.abc import Callable
-from threading import Event, Thread
-from urllib.parse import urlparse
+from typing import Any
 
-from agents.mcp import MCPServerStdio
 from mcp.types import CallToolResult, TextContent
 
-from .available_tools import AvailableTools, AvailableToolType
+from .available_tools import AvailableTools
 from .env_utils import swap_env
 
-DEFAULT_MCP_CLIENT_SESSION_TIMEOUT = 120
+# Re-export transport classes and prompt builder so that existing
+# ``from .mcp_utils import …`` statements continue to work.
+from .mcp_prompt import mcp_system_prompt as mcp_system_prompt  # noqa: F401
+from .mcp_transport import (  # noqa: F401
+    AsyncDebugMCPServerStdio as AsyncDebugMCPServerStdio,
+    ReconnectingMCPServerStdio as ReconnectingMCPServerStdio,
+    StreamableMCPThread as StreamableMCPThread,
+)
+
+DEFAULT_MCP_CLIENT_SESSION_TIMEOUT: int = 120
+
+# The OpenAI API rejects tool names longer than 64 characters.
+# We hash long names down to this many hex characters.
+COMPRESSED_NAME_LENGTH: int = 12
 
 
-# The openai API complains if the name of a tool is longer than 64
-# chars. But it's easy to go over the limit if the yaml file is in a
-# nested sub-directory, so this function converts a name to a 12
-# character hash.
-def compress_name(name):
+def compress_name(name: str) -> str:
+    """Return a short hash of *name* to fit the OpenAI 64-char tool-name limit.
+
+    Args:
+        name: The original tool / toolbox name.
+
+    Returns:
+        A 12-character lowercase hex digest.
+    """
     m = hashlib.sha256()
     m.update(name.encode("utf-8"))
-    return m.hexdigest()[:12]
-
-
-# A process management class for running in-process MCP streamable servers
-class StreamableMCPThread(Thread):
-    """Process management for local streamable MCP servers"""
-
-    def __init__(
-        self,
-        cmd,
-        url: str = "",
-        on_output: Callable[[str], None] | None = None,
-        on_error: Callable[[str], None] | None = None,
-        poll_interval: float = 0.5,
-        env: dict[str, str] | None = None,
-    ):
-        super().__init__(daemon=True)
-        self.url = url
-        self.cmd = cmd
-        self.on_output = on_output
-        self.on_error = on_error
-        self.poll_interval = poll_interval
-        self.env = os.environ.copy()  # XXX: potential for environment leak to MCP
-        self.env.update(env)
-        self._stop_event = Event()
-        self.process = None
-        self.exit_code = None
-        self.exception: BaseException | None = None
-
-    async def async_wait_for_connection(self, timeout=30.0, poll_interval=0.5):
-        parsed = urlparse(self.url)
-        host = parsed.hostname
-        port = parsed.port
-        if host is None or port is None:
-            raise ValueError(f"URL must include a host and port: {self.url}")
-        deadline = asyncio.get_event_loop().time() + timeout
-        while True:
-            try:
-                reader, writer = await asyncio.open_connection(host, port)
-                writer.close()
-                await writer.wait_closed()
-                return  # Success
-            except (OSError, ConnectionRefusedError):
-                if asyncio.get_event_loop().time() > deadline:
-                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds")
-                await asyncio.sleep(poll_interval)
-
-    def wait_for_connection(self, timeout=30.0, poll_interval=0.5):
-        parsed = urlparse(self.url)
-        host = parsed.hostname
-        port = parsed.port
-        if host is None or port is None:
-            raise ValueError(f"URL must include a host and port: {self.url}")
-        deadline = time.time() + timeout
-        while True:
-            try:
-                with socket.create_connection((host, port), timeout=2):
-                    return  # Success
-            except OSError:
-                if time.time() > deadline:
-                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds")
-                time.sleep(poll_interval)
-
-    def run(self):
-        try:
-            self.process = subprocess.Popen(
-                self.cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True,
-                env=self.env,
-            )
-
-            stdout_thread = Thread(target=self._read_stream, args=(self.process.stdout, self.on_output))
-            stderr_thread = Thread(target=self._read_stream, args=(self.process.stderr, self.on_error))
-            stdout_thread.start()
-            stderr_thread.start()
-
-            while self.process.poll() is None and not self._stop_event.is_set():
-                time.sleep(self.poll_interval)
-
-            # Process ended or stop requested
-            if self.process.poll() is None:
-                self.process.terminate()
-                self.process.wait()
-            self.exit_code = self.process.returncode
-
-            stdout_thread.join()
-            stderr_thread.join()
-
-            # sigterm (-15) is expected
-            if self.exit_code not in [0, -15]:
-                self.exception = subprocess.CalledProcessError(self.exit_code, self.cmd)
-
-        except BaseException as e:
-            self.exception = e
-
-    def _read_stream(self, stream, callback):
-        if stream is None or callback is None:
-            return
-        for line in iter(stream.readline, ""):
-            callback(line.rstrip("\n"))
-        stream.close()
-
-    def stop(self):
-        self._stop_event.set()
-        if self.process and self.process.poll() is None:
-            self.process.terminate()
-
-    def is_running(self):
-        return self.process and self.process.poll() is None
-
-    def join_and_raise(self, timeout: float | None = None):
-        self.join(timeout)
-        if self.is_alive():
-            raise RuntimeError("Process thread did not exit within timeout.")
-        if self.exception is not None:
-            raise self.exception
-
-
-# used for debugging asyncio event loop issues in mcp stdio servers
-# lifts the asyncio event loop in use to a dedicated threaded loop
-class AsyncDebugMCPServerStdio(MCPServerStdio):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        class AsyncLoopThread(Thread):
-            def __init__(self):
-                super().__init__(daemon=True)
-                self.loop = asyncio.new_event_loop()
-
-            def run(self):
-                asyncio.set_event_loop(self.loop)
-                self.loop.run_forever()
-
-        self.t = AsyncLoopThread()
-        self.t.start()
-        self.lock = asyncio.Lock()
-
-    async def connect(self, *args, **kwargs):
-        return asyncio.run_coroutine_threadsafe(super().connect(*args, **kwargs), self.t.loop).result()
-
-    async def list_tools(self, *args, **kwargs):
-        return asyncio.run_coroutine_threadsafe(super().list_tools(*args, **kwargs), self.t.loop).result()
-
-    async def call_tool(self, *args, **kwargs):
-        async with self.lock:
-            return asyncio.run_coroutine_threadsafe(super().call_tool(*args, **kwargs), self.t.loop).result()
-
-    async def cleanup(self, *args, **kwargs):
-        try:
-            asyncio.run_coroutine_threadsafe(super().cleanup(*args, **kwargs), self.t.loop).result()
-        except asyncio.CancelledError:
-            pass
-        finally:
-            self.t.loop.stop()
-            self.t.join()
-
-
-# a hack class that works around buggy jsonrpc stdio behavior in FastMCP 1.0
-# long running high volume processes tend to get confused and miss i/o
-# if you're seeing behavior where your mcp server tool call completes
-# but the results never arrive to to the mcp client side, try and set
-# reconnecting: true in your toolbox config
-class ReconnectingMCPServerStdio(MCPServerStdio):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.reconnecting_lock = asyncio.Lock()
-
-    async def connect(self):
-        logging.debug("Ignoring mcp connect request on purpose")
-
-    async def cleanup(self):
-        logging.debug("Ignoring mcp cleanup request on purpose")
-
-    async def list_tools(self, *args, **kwargs):
-        async with self.reconnecting_lock:
-            await super().connect()
-            try:
-                result = await super().list_tools(*args, **kwargs)
-            finally:
-                await super().cleanup()
-            return result
-
-    async def call_tool(self, *args, **kwargs):
-        logging.debug("Using reconnecting call_tool for stdio mcp")
-        async with self.reconnecting_lock:
-            await super().connect()
-            try:
-                result = await super().call_tool(*args, **kwargs)
-            finally:
-                await super().cleanup()
-            return result
+    return m.hexdigest()[:COMPRESSED_NAME_LENGTH]
 
 
 class MCPNamespaceWrap:
-    """An MCP client object wrapper that provides us with namespace control"""
+    """MCP client wrapper that prefixes tool names with a namespace hash.
 
-    def __init__(self, confirms, obj):
-        self.confirms = confirms
-        self._obj = obj
-        self.namespace = compress_name(obj.name)
+    Also provides optional interactive confirmation before calling
+    specific tools.
 
-    def __getattr__(self, name):
+    Args:
+        confirms: Tool names that require user confirmation.
+        obj: The underlying MCP server/client object to wrap.
+    """
+
+    def __init__(self, confirms: list[str], obj: Any) -> None:
+        self.confirms: list[str] = confirms
+        self._obj: Any = obj
+        self.namespace: str = compress_name(obj.name)
+
+    def __getattr__(self, name: str) -> Any:
         attr = getattr(self._obj, name)
         if callable(attr):
             match name:
@@ -247,16 +86,26 @@ class MCPNamespaceWrap:
                     return attr
         return attr
 
-    async def list_tools(self, *args, **kwargs):
+    async def list_tools(self, *args: Any, **kwargs: Any) -> list[Any]:
+        """List tools with namespace-prefixed names."""
         result = await self._obj.list_tools(*args, **kwargs)
-        namespaced_tools = []
+        namespaced_tools: list[Any] = []
         for tool in result:
             tool_copy = tool.copy()
             tool_copy.name = f"{self.namespace}{tool.name}"
             namespaced_tools.append(tool_copy)
         return namespaced_tools
 
-    def confirm_tool(self, tool_name, args):
+    def confirm_tool(self, tool_name: str, args: list[Any]) -> bool:
+        """Interactively prompt the user for tool-call confirmation.
+
+        Args:
+            tool_name: The tool being invoked.
+            args: Positional arguments to display.
+
+        Returns:
+            ``True`` if the user approved the call.
+        """
         while True:
             yn = input(
                 f"** 🤖❗ Allow tool call?: {tool_name}({','.join([json.dumps(arg) for arg in args])}) (yes/no): "
@@ -266,9 +115,10 @@ class MCPNamespaceWrap:
             if yn in ["no", "n"]:
                 return False
 
-    async def call_tool(self, *args, **kwargs):
+    async def call_tool(self, *args: Any, **kwargs: Any) -> Any:
+        """Call a tool, stripping the namespace prefix and optionally confirming."""
         _args = list(args)
-        tool_name = _args[0]
+        tool_name: str = _args[0]
         tool_name = tool_name.removeprefix(self.namespace)
         # to run headless, just make confirms an empty list
         if self.confirms and tool_name in self.confirms:
@@ -283,21 +133,42 @@ class MCPNamespaceWrap:
         return result
 
 
-def mcp_client_params(available_tools: AvailableTools, requested_toolboxes: list):
-    """Return all the data needed to initialize an mcp server client"""
-    client_params = {}
+ClientParamsMap = dict[str, tuple[dict[str, Any], list[str], str | None, int | None]]
+
+
+def mcp_client_params(
+    available_tools: AvailableTools,
+    requested_toolboxes: list[str],
+) -> ClientParamsMap:
+    """Resolve toolbox configs into MCP server connection parameters.
+
+    Args:
+        available_tools: The tool registry that can look up toolbox configs.
+        requested_toolboxes: Module paths of the toolboxes to resolve.
+
+    Returns:
+        A mapping from toolbox name to a tuple of
+        ``(server_params, confirms, server_prompt, client_session_timeout)``.
+
+    Raises:
+        ValueError: If the transport kind is not supported.
+        FileNotFoundError: If a streamable command cannot be found on ``$PATH``.
+    """
+    client_params: ClientParamsMap = {}
     for tb in requested_toolboxes:
-        toolbox = available_tools.get_tool(AvailableToolType.Toolbox, tb)
-        kind = toolbox["server_params"].get("kind")
-        reconnecting = toolbox["server_params"].get("reconnecting", False)
-        server_params = {"kind": kind, "reconnecting": reconnecting}
+        toolbox = available_tools.get_toolbox(tb)
+        sp = toolbox.server_params
+        kind: str = sp.kind
+        reconnecting: bool = sp.reconnecting
+        server_params: dict[str, Any] = {"kind": kind, "reconnecting": reconnecting}
+
         match kind:
             case "stdio":
-                env = toolbox["server_params"].get("env")
-                args = toolbox["server_params"].get("args")
+                env = dict(sp.env) if sp.env else None
+                args = list(sp.args) if sp.args else None
                 logging.debug(f"Initializing toolbox: {tb}\nargs:\n{args}\nenv:\n{env}\n")
-                if env and isinstance(env, dict):
-                    for k, v in dict(env).items():
+                if env:
+                    for k, v in list(env.items()):
                         try:
                             env[k] = swap_env(v)
                         except LookupError as e:
@@ -305,85 +176,41 @@ def mcp_client_params(available_tools: AvailableTools, requested_toolboxes: list
                             logging.info("Assuming toolbox has default configuration available")
                             del env[k]
                 logging.debug(f"Tool call environment: {env}")
-                if args and isinstance(args, list):
+                if args:
                     for i, v in enumerate(args):
                         args[i] = swap_env(v)
                 logging.debug(f"Tool call args: {args}")
-                server_params["command"] = toolbox["server_params"].get("command")
+                server_params["command"] = sp.command
                 server_params["args"] = args
                 server_params["env"] = env
-            # XXX: SSE is deprecated in the MCP spec, but keep it around for now
+
             case "sse":
-                headers = toolbox["server_params"].get("headers")
-                # support {{ env SOMETHING }} for header values as well for e.g. tokens
-                if headers and isinstance(headers, dict):
-                    for k, v in headers.items():
-                        headers[k] = swap_env(v)
-                optional_headers = toolbox["server_params"].get("optional_headers")
-                # support {{ env SOMETHING }} for header values as well for e.g. tokens
-                if optional_headers and isinstance(optional_headers, dict):
-                    for k, v in dict(optional_headers).items():
-                        try:
-                            optional_headers[k] = swap_env(v)
-                        except LookupError:
-                            del optional_headers[k]
-                if isinstance(headers, dict):
-                    if isinstance(optional_headers, dict):
-                        headers.update(optional_headers)
-                elif isinstance(optional_headers, dict):
-                    headers = optional_headers
-                # if None will default to float(5) in client code
-                timeout = toolbox["server_params"].get("timeout")
-                server_params["url"] = toolbox["server_params"].get("url")
+                headers = _resolve_headers(sp.headers, sp.optional_headers)
+                server_params["url"] = sp.url
                 server_params["headers"] = headers
-                server_params["timeout"] = timeout
-            # for more involved local MCP servers, jsonrpc over stdio seems less than reliable
-            # as an alternative you can configure local toolboxes to use the streamable transport
-            # but still be started/stopped on demand similar to stdio mcp servers
-            # all it requires is a streamable config that also has cmd/args/env set
+                server_params["timeout"] = sp.timeout
+
             case "streamable":
-                headers = toolbox["server_params"].get("headers")
-                # support {{ env SOMETHING }} for header values as well for e.g. tokens
-                if headers and isinstance(headers, dict):
-                    for k, v in headers.items():
-                        headers[k] = swap_env(v)
-                optional_headers = toolbox["server_params"].get("optional_headers")
-                # support {{ env SOMETHING }} for header values as well for e.g. tokens
-                if optional_headers and isinstance(optional_headers, dict):
-                    for k, v in dict(optional_headers).items():
-                        try:
-                            optional_headers[k] = swap_env(v)
-                        except LookupError:
-                            del optional_headers[k]
-                if isinstance(headers, dict):
-                    if isinstance(optional_headers, dict):
-                        headers.update(optional_headers)
-                elif isinstance(optional_headers, dict):
-                    headers = optional_headers
-                # if None will default to float(5) in client code
-                timeout = toolbox["server_params"].get("timeout")
-                server_params["url"] = toolbox["server_params"].get("url")
+                headers = _resolve_headers(sp.headers, sp.optional_headers)
+                server_params["url"] = sp.url
                 server_params["headers"] = headers
-                server_params["timeout"] = timeout
-                # if command/args/env is set, we also need to start this MCP server ourselves
-                # this way we can use the streamable transport for MCP servers that get fussy
-                # over stdio jsonrpc polling
-                env = toolbox["server_params"].get("env")
-                args = toolbox["server_params"].get("args")
-                cmd = toolbox["server_params"].get("command")
-                if cmd is not None:
+                server_params["timeout"] = sp.timeout
+
+                if sp.command is not None:
+                    env = dict(sp.env) if sp.env else None
+                    args = list(sp.args) if sp.args else None
                     logging.debug(f"Initializing streamable toolbox: {tb}\nargs:\n{args}\nenv:\n{env}\n")
-                    exe = shutil.which(cmd)
+                    exe = shutil.which(sp.command)
                     if exe is None:
-                        raise FileNotFoundError(f"Could not resolve path to {cmd}")
+                        raise FileNotFoundError(f"Could not resolve path to {sp.command}")
                     start_cmd = [exe]
-                    if args is not None and isinstance(args, list):
+                    if args:
                         for i, v in enumerate(args):
                             args[i] = swap_env(v)
                         start_cmd += args
                     server_params["command"] = start_cmd
-                    if env is not None and isinstance(env, dict):
-                        for k, v in dict(env).items():
+                    if env:
+                        for k, v in list(env.items()):
                             try:
                                 env[k] = swap_env(v)
                             except LookupError as e:
@@ -391,77 +218,65 @@ def mcp_client_params(available_tools: AvailableTools, requested_toolboxes: list
                                 logging.info("Assuming toolbox has default configuration available")
                                 del env[k]
                     server_params["env"] = env
+
             case _:
                 raise ValueError(f"Unsupported MCP transport {kind}")
-        confirms = toolbox.get("confirm", [])
-        server_prompt = toolbox.get("server_prompt", "")
-        client_session_timeout = float(toolbox.get("client_session_timeout", 0))
-        client_params[tb] = (server_params, confirms, server_prompt, client_session_timeout)
+
+        client_params[tb] = (
+            server_params,
+            list(toolbox.confirm),
+            toolbox.server_prompt,
+            toolbox.client_session_timeout,
+        )
     return client_params
 
 
-def mcp_system_prompt(
-    system_prompt: str,
-    task: str,
-    tools: list[str] = [],
-    resources: list[str] = [],
-    resource_templates: list[str] = [],
-    important_guidelines: list[str] = [],
-    server_prompts: list[str] = [],
-):
-    """Return a well constructed system prompt"""
-    prompt = f"""
-{system_prompt}
-"""
+def _resolve_headers(
+    headers: dict[str, str] | None,
+    optional_headers: dict[str, str] | None,
+) -> dict[str, str] | None:
+    """Expand env references in headers and merge required + optional.
 
-    if tools:
-        prompt += """
+    Required headers raise on missing env vars; optional headers are
+    silently dropped when a referenced variable is absent.
 
-# Available Tools
+    Args:
+        headers: Header dict whose values may contain ``{{ env('…') }}``.
+        optional_headers: Like *headers*, but missing env vars are tolerated.
 
-- {tools}
-""".format(tools="\n- ".join(tools))
+    Returns:
+        Merged header dict, or ``None`` if both inputs are ``None``.
+    """
+    resolved: dict[str, str] | None = None
+    if headers:
+        resolved = dict(headers)
+        for k, v in resolved.items():
+            resolved[k] = swap_env(v)
+    resolved_optional: dict[str, str] | None = None
+    if optional_headers:
+        resolved_optional = dict(optional_headers)
+        for k, v in list(resolved_optional.items()):
+            try:
+                resolved_optional[k] = swap_env(v)
+            except LookupError:
+                del resolved_optional[k]
+    return _merge_headers(resolved, resolved_optional)
 
-    if resources:
-        prompt += """
 
-# Available Resources
+def _merge_headers(
+    headers: dict[str, str] | None,
+    optional_headers: dict[str, str] | None,
+) -> dict[str, str] | None:
+    """Merge required and optional header dicts.
 
-- {resources}
-""".format(resources="\n- ".join(resources))
+    Args:
+        headers: Required headers (may be ``None``).
+        optional_headers: Optional headers (may be ``None``).
 
-    if resource_templates:
-        prompt += """
-
-# Available Resource Templates
-
-- {resource_templates}
-""".format(resource_templates="\n- ".join(resource_templates))
-
-    if important_guidelines:
-        prompt += """
-
-# Important Guidelines
-
-- IMPORTANT: {guidelines}
-""".format(guidelines="\n- IMPORTANT: ".join(important_guidelines))
-
-    if server_prompts:
-        prompt += """
-
-# Additional Guidelines
-
-{server_prompts}
-
-""".format(server_prompts="\n\n".join(server_prompts))
-
-    if task:
-        prompt += f"""
-
-# Primary Task to Complete
-
-{task}
-
-"""
-
-    return prompt
+    Returns:
+        Combined header dict, or ``None`` if both are ``None``.
+    """
+    if headers and optional_headers:
+        headers.update(optional_headers)
+        return headers
+    return headers or optional_headers

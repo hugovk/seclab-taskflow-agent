@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: GitHub, Inc.
+# SPDX-License-Identifier: MIT
+
+# Edge-case test taskflow targeting less-exercised code paths:
+#   - shell task producing nested JSON for repeat_prompt
+#   - repeat_prompt over dictionary items (not just arrays)
+#   - env variable scoping (task-level env)
+#   - globals CLI override combined with file defaults
+#   - max_steps constraint
+#   - must_complete on a non-tool task
+#   - empty taskflow section handling
+
+seclab-taskflow-agent:
+  version: "1.0"
+  filetype: taskflow
+
+model_config: examples.model_configs.model_config
+
+globals:
+  category: edge-cases
+  default_value: from-file
+
+taskflow:
+  # ---------------------------------------------------------------
+  # Task 1: Shell task with nested JSON structure
+  # Tests: run, must_complete, complex JSON output
+  # ---------------------------------------------------------------
+  - task:
+      name: nested-json-shell
+      must_complete: true
+      run: |
+        echo '[{"id": 1, "data": {"label": "alpha", "score": 0.95}}, {"id": 2, "data": {"label": "beta", "score": 0.87}}]'
+
+  # ---------------------------------------------------------------
+  # Task 2: Repeat over nested structure, sequential (not async)
+  # Tests: repeat_prompt (sequential), nested result access,
+  #        globals reference, inputs, env scoping, max_steps
+  # ---------------------------------------------------------------
+  - task:
+      name: sequential-repeat
+      repeat_prompt: true
+      must_complete: true
+      model: gpt_default
+      max_steps: 5
+      agents:
+        - examples.personalities.fruit_expert
+      inputs:
+        output_format: json
+      env:
+        EDGE_TEST_MODE: "sequential"
+      user_prompt: |
+        Category: {{ globals.category }}, default: {{ globals.default_value }}.
+        Item ID {{ result.id }}: label={{ result.data.label }}, score={{ result.data.score }}.
+        Respond with exactly one sentence summarizing this item in {{ inputs.output_format }} awareness.
+
+  # ---------------------------------------------------------------
+  # Task 3: Simple prompt with no tools (headless, no toolboxes)
+  # Tests: pure LLM task, exclude_from_context, model alias
+  # ---------------------------------------------------------------
+  - task:
+      name: pure-llm-task
+      model: gpt_default
+      exclude_from_context: true
+      agents:
+        - examples.personalities.fruit_expert
+      max_steps: 3
+      user_prompt: |
+        The category is {{ globals.category }}.
+        Say "edge case test passed" and nothing else.
