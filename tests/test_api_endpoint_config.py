@@ -62,15 +62,14 @@ class TestAPIEndpoint:
         assert endpoint.to_url() == "https://api.openai.com/v1"
 
     def test_unsupported_endpoint(self, monkeypatch):
-        """Test that unsupported API endpoint raises ValueError."""
+        """Test that unsupported API endpoint falls back gracefully."""
         api_endpoint = "https://unsupported.example.com"
         monkeypatch.setenv("AI_API_ENDPOINT", api_endpoint)
-        with pytest.raises(ValueError) as excinfo:
-            list_capi_models("abc")
-        msg = str(excinfo.value)
-        assert "Unsupported Model Endpoint" in msg
-        assert "https://models.github.ai/inference" in msg
-        assert "https://api.githubcopilot.com" in msg
+        # Unknown endpoints should not raise; they try OpenAI-style catalog
+        # and return an empty dict on connection failure.
+        result = list_capi_models("abc")
+        assert isinstance(result, dict)
+        assert result == {}
 
 
 if __name__ == "__main__":

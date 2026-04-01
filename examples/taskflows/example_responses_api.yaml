@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: GitHub, Inc.
+# SPDX-License-Identifier: MIT
+
+# Example taskflow using the Responses API instead of Chat Completions.
+# Requires an endpoint that supports the Responses API (e.g. api.githubcopilot.com).
+
+seclab-taskflow-agent:
+  version: "1.0"
+  filetype: taskflow
+
+model_config: examples.model_configs.responses_api
+
+taskflow:
+  - task:
+      agents:
+        - seclab_taskflow_agent.personalities.assistant
+      model: gpt_responses
+      user_prompt: |
+        What is the capital of France? Reply in one sentence.

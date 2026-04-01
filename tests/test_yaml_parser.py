@@ -18,13 +18,13 @@ class TestYamlParser:
     def test_yaml_parser_basic_functionality(self):
         """Test basic YAML parsing functionality."""
         available_tools = AvailableTools()
-        personality000 = available_tools.get_personality(
+        personality = available_tools.get_personality(
             "tests.data.test_yaml_parser_personality000")
 
-        assert personality000['seclab-taskflow-agent']['version'] == "1.0"
-        assert personality000['seclab-taskflow-agent']['filetype'] == 'personality'
-        assert personality000['personality'] == 'You are a helpful assistant.\n'
-        assert personality000['task'] == 'Answer any question.\n'
+        assert personality.header.version == "1.0"
+        assert personality.header.filetype == "personality"
+        assert personality.personality == "You are a helpful assistant.\n"
+        assert personality.task == "Answer any question.\n"
 
     def test_version_integer_format(self):
         """Test that integer version format is accepted."""
@@ -32,9 +32,10 @@ class TestYamlParser:
         personality = available_tools.get_personality(
             "tests.data.test_version_integer")
 
-        assert personality['seclab-taskflow-agent']['version'] == 1
-        assert personality['seclab-taskflow-agent']['filetype'] == 'personality'
-        assert personality['personality'] == 'Test personality with integer version.\n'
+        # Version is normalized to "1.0" by the model
+        assert personality.header.version == "1.0"
+        assert personality.header.filetype == "personality"
+        assert personality.personality == "Test personality with integer version.\n"
 
     def test_version_float_format(self):
         """Test that float version format is accepted."""
@@ -42,24 +43,24 @@ class TestYamlParser:
         personality = available_tools.get_personality(
             "tests.data.test_version_float")
 
-        assert personality['seclab-taskflow-agent']['version'] == 1.0
-        assert personality['seclab-taskflow-agent']['filetype'] == 'personality'
-        assert personality['personality'] == 'Test personality with float version.\n'
+        # Version is normalized to "1.0" by the model
+        assert personality.header.version == "1.0"
+        assert personality.header.filetype == "personality"
+        assert personality.personality == "Test personality with float version.\n"
 
 class TestRealTaskflowFiles:
     """Test parsing of actual taskflow files in the project."""
 
     def test_parse_example_taskflows(self):
         """Test parsing example taskflow files."""
-        # this test uses the actual taskflows in the project
         available_tools = AvailableTools()
 
         # check that example.yaml is parsed correctly
-        example_task_flow = available_tools.get_taskflow("examples.taskflows.example")
-        assert "taskflow" in example_task_flow
-        assert isinstance(example_task_flow["taskflow"], list)
-        assert len(example_task_flow["taskflow"]) == 4  # 4 tasks in taskflow
-        assert example_task_flow["taskflow"][0]["task"]["max_steps"] == 20
+        example = available_tools.get_taskflow("examples.taskflows.example")
+        assert example.taskflow is not None
+        assert isinstance(example.taskflow, list)
+        assert len(example.taskflow) == 4  # 4 tasks in taskflow
+        assert example.taskflow[0].task.max_steps == 20
 
 
 if __name__ == "__main__":

@@ -1,8 +1,14 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
+"""Environment variable utilities for taskflow execution."""
+
 import os
+from typing import Any
+
 import jinja2
+
+__all__ = ["TmpEnv", "swap_env"]
 
 
 
@@ -40,15 +46,17 @@ def swap_env(s: str) -> str:
 
 
 class TmpEnv:
-    def __init__(self, env):
+    """Context manager that temporarily sets environment variables."""
+
+    def __init__(self, env: dict[str, str]) -> None:
         self.env = dict(env)
         self.restore_env = dict(os.environ)
 
-    def __enter__(self):
+    def __enter__(self) -> None:
         for k, v in self.env.items():
             os.environ[k] = swap_env(v)
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: Any | None) -> None:
         for k, v in self.env.items():
             del os.environ[k]
             if k in self.restore_env:

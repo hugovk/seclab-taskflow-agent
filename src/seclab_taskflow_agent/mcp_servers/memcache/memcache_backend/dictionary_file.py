@@ -84,10 +84,10 @@ class MemcacheDictionaryFileBackend(Backend):
         @self.with_memory
         def _add_state(key: str, value: Any) -> str:
             existing = self.memcache.get(key)
-            if type(existing) == type(value) and hasattr(existing, "__add__"):
+            if type(existing) is type(value) and hasattr(existing, "__add__"):
                 self.memcache[key] = existing + value
                 return f"Updated and added to value in memory for key: `{key}`"
-            if type(existing) == list:
+            if isinstance(existing, list):
                 self.memcache[key].append(value)
                 return f"Updated and added to value in memory for key: `{key}`"
             return f"Error: unsupported types for memcache add `{type(existing)} + {type(value)}` for key `{key}`"

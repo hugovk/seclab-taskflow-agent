@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
-# CAPI specific interactions
+"""AI API endpoint and token management (CAPI integration)."""
+
 import json
 import logging
 import os
@@ -10,6 +11,16 @@ from urllib.parse import urlparse
 import httpx
 from strenum import StrEnum
 
+__all__ = [
+    "AI_API_ENDPOINT_ENUM",
+    "COPILOT_INTEGRATION_ID",
+    "get_AI_endpoint",
+    "get_AI_token",
+    "list_capi_models",
+    "list_tool_call_models",
+    "supports_tool_calls",
+]
+
 
 # Enumeration of currently supported API endpoints.
 class AI_API_ENDPOINT_ENUM(StrEnum):
@@ -17,10 +28,8 @@ class AI_API_ENDPOINT_ENUM(StrEnum):
     AI_API_GITHUBCOPILOT = "api.githubcopilot.com"
     AI_API_OPENAI = "api.openai.com"
 
-    def to_url(self):
-        """
-        Convert the endpoint to its full URL.
-        """
+    def to_url(self) -> str:
+        """Convert the endpoint to its full URL."""
         match self:
             case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
                 return f"https://{self}"
@@ -39,17 +48,14 @@ COPILOT_INTEGRATION_ID = "vscode-chat"
 # but beware that your taskflows need to reference the correct model id
 # since different APIs use their own id schema, use -l with your desired
 # endpoint to retrieve the correct id names to use for your taskflow
-def get_AI_endpoint():
+def get_AI_endpoint() -> str:
+    """Return the configured AI API endpoint URL."""
     return os.getenv("AI_API_ENDPOINT", default="https://models.github.ai/inference")
 
 
-def get_AI_token():
-    """
-    Get the token for the AI API from the environment.
-    The environment variable can be named either AI_API_TOKEN
-    or COPILOT_TOKEN.
-    """
-    token = os.getenv("AI_API_TOKEN")
+def get_AI_token() -> str:
+    """Get the AI API token from AI_API_TOKEN or COPILOT_TOKEN env vars."""
+    token: str | None = os.getenv("AI_API_TOKEN")
     if token:
         return token
     token = os.getenv("COPILOT_TOKEN")
@@ -73,10 +79,8 @@ def list_capi_models(token: str) -> dict[str, dict]:
             case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
                 models_catalog = "models"
             case _:
-                raise ValueError(
-                    f"Unsupported Model Endpoint: {api_endpoint}\n"
-                    f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}"
-                )
+                # Unknown endpoint — try the OpenAI-style models catalog
+                models_catalog = "models"
         r = httpx.get(
             httpx.URL(api_endpoint).join(models_catalog),
             headers={
@@ -94,43 +98,47 @@ def list_capi_models(token: str) -> dict[str, dict]:
                 models_list = r.json()
             case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
                 models_list = r.json().get("data", [])
+            case _:
+                # Unknown endpoint — try common response shapes
+                body = r.json()
+                if isinstance(body, dict):
+                    models_list = body.get("data", [])
+                elif isinstance(body, list):
+                    models_list = body
+                else:
+                    models_list = []
         for model in models_list:
             models[model.get("id")] = dict(model)
-    except httpx.RequestError as e:
+    except httpx.RequestError:
         logging.exception("Request error")
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         logging.exception("JSON error")
-    except httpx.HTTPStatusError as e:
+    except httpx.HTTPStatusError:
         logging.exception("HTTP error")
     return models
 
 
-def supports_tool_calls(model: str, models: dict) -> bool:
+def supports_tool_calls(model: str, models: dict[str, dict]) -> bool:
+    """Check whether the given model supports tool calls."""
     api_endpoint = get_AI_endpoint()
-    match urlparse(api_endpoint).netloc:
+    netloc = urlparse(api_endpoint).netloc
+    match netloc:
         case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
             return models.get(model, {}).get("capabilities", {}).get("supports", {}).get("tool_calls", False)
         case AI_API_ENDPOINT_ENUM.AI_API_MODELS_GITHUB:
             return "tool-calling" in models.get(model, {}).get("capabilities", [])
         case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
-            # OpenAI doesn't expose capabilities in the models list
-            # Check if model name indicates function calling support
-            model_lower = model.lower()
-            return any(
-                [
-                    "gpt-" in model_lower,
-                ]
-            )
+            return "gpt-" in model.lower()
         case _:
-            raise ValueError(
-                f"Unsupported Model Endpoint: {api_endpoint}\n"
-                f"Supported endpoints: {[e.to_url() for e in AI_API_ENDPOINT_ENUM]}"
-            )
+            # Unknown endpoint — optimistically assume tool-call support
+            # if the model is present in the catalog.
+            return model in models
 
 
 def list_tool_call_models(token: str) -> dict[str, dict]:
+    """Return only models that support tool calls."""
     models = list_capi_models(token)
-    tool_models = {}
+    tool_models: dict[str, dict] = {}
     for model in models:
         if supports_tool_calls(model, models) is True:
             tool_models[model] = models[model]

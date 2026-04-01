@@ -112,7 +112,7 @@ class Spec:
         """
         try:
             get_error(code)
-        except:
+        except Exception:
             raise TypeError(f"invalid error code, got {code} ({type(code)})")
 
     @classmethod

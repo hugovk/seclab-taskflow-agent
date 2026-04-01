@@ -509,4 +509,39 @@ When `gpt_latest` is used in the taskflow to specify a model, the value `gpt-5` 
 
 ```
 
-This provides a easy way to update model versions in a taskflow.
+This provides an easy way to update model versions in a taskflow.
+
+#### Per-model settings
+
+A `model_config` file can include per-model settings via `model_settings` and a
+global `api_type` that applies to all models unless overridden:
+
+```yaml
+seclab-taskflow-agent:
+  version: "1.0"
+  filetype: model_config
+api_type: chat_completions        # default for all models
+models:
+  gpt_default: gpt-4.1
+  gpt_responses: gpt-5.1
+model_settings:
+  gpt_default:
+    temperature: 0.7
+  gpt_responses:
+    api_type: responses           # use the Responses API for this model
+    endpoint: https://api.githubcopilot.com
+    token: CAPI_TOKEN             # env var name containing the API key
+    temperature: 0.5
+```
+
+The following keys in `model_settings` are handled by the engine and are not
+passed to the underlying model provider:
+
+| Key | Description | Default |
+|-----|-------------|---------|
+| `api_type` | `"chat_completions"` or `"responses"` | Inherited from top-level `api_type`, or `"chat_completions"` |
+| `endpoint` | API base URL for this model | The global `AI_API_ENDPOINT` env var |
+| `token` | Name of an environment variable containing the API key | Uses `AI_API_TOKEN` / `COPILOT_TOKEN` |
+
+All other keys (e.g. `temperature`, `top_p`) are passed through as model
+parameters to the OpenAI SDK.

@@ -1,10 +1,31 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
+"""YAML resource loader for taskflow grammar files.
+
+Loads and caches personality, taskflow, toolbox, model_config, and prompt
+YAML files, validating them against Pydantic grammar models at parse time.
+"""
+
+from __future__ import annotations
+
+__all__ = ["AvailableTools"]
+
 import importlib.resources
 from enum import Enum
+from typing import Union
 
 import yaml
+from pydantic import ValidationError
+
+from .models import (
+    DOCUMENT_MODELS,
+    ModelConfigDocument,
+    PersonalityDocument,
+    PromptDocument,
+    TaskflowDocument,
+    ToolboxDocument,
+)
 
 
 class BadToolNameError(Exception):
@@ -27,85 +48,120 @@ class AvailableToolType(Enum):
     ModelConfig = "model_config"
 
 
+# Union of all document model types returned by AvailableTools
+DocumentModel = Union[
+    TaskflowDocument, PersonalityDocument, ToolboxDocument,
+    ModelConfigDocument, PromptDocument,
+]
+
+
 class AvailableTools:
-    """
-    This class is used for storing dictionaries of all the available
-    personalities, taskflows, and prompts.
-    """
+    """Loads, validates, and caches YAML grammar files as Pydantic models."""
 
-    def __init__(self):
-        self.__yamlcache = {}
+    def __init__(self) -> None:
+        self._cache: dict[AvailableToolType, dict[str, DocumentModel]] = {}
 
-    def get_personality(self, name: str):
-        return self.get_tool(AvailableToolType.Personality, name)
+    def get_personality(self, name: str) -> PersonalityDocument:
+        """Load a personality YAML and return a validated PersonalityDocument."""
+        return self._load(AvailableToolType.Personality, name)
 
-    def get_taskflow(self, name: str):
-        return self.get_tool(AvailableToolType.Taskflow, name)
+    def get_taskflow(self, name: str) -> TaskflowDocument:
+        """Load a taskflow YAML and return a validated TaskflowDocument."""
+        return self._load(AvailableToolType.Taskflow, name)
 
-    def get_prompt(self, name: str):
-        return self.get_tool(AvailableToolType.Prompt, name)
+    def get_prompt(self, name: str) -> PromptDocument:
+        """Load a prompt YAML and return a validated PromptDocument."""
+        return self._load(AvailableToolType.Prompt, name)
 
-    def get_toolbox(self, name: str):
-        return self.get_tool(AvailableToolType.Toolbox, name)
+    def get_toolbox(self, name: str) -> ToolboxDocument:
+        """Load a toolbox YAML and return a validated ToolboxDocument."""
+        return self._load(AvailableToolType.Toolbox, name)
 
-    def get_model_config(self, name: str):
-        return self.get_tool(AvailableToolType.ModelConfig, name)
+    def get_model_config(self, name: str) -> ModelConfigDocument:
+        """Load a model_config YAML and return a validated ModelConfigDocument."""
+        return self._load(AvailableToolType.ModelConfig, name)
 
-    def get_tool(self, tooltype: AvailableToolType, toolname: str):
-        """for example: available_tools.get_tool("personality", "personalities/fruit_expert")
-        This method first checks whether the tool has already been loaded. If not, it
-        finds the yaml file and parses it. It also checks that the filetype in the header
-        matches the expected tooltype.
+    # Keep legacy alias for code that uses the generic accessor
+    def get_tool(self, tooltype: AvailableToolType, toolname: str) -> DocumentModel:
+        """Generic loader — prefer the typed ``get_*()`` methods."""
+        return self._load(tooltype, toolname)
+
+    def _load(self, tooltype: AvailableToolType, toolname: str) -> DocumentModel:
+        """Load, validate, and cache a YAML grammar file.
+
+        Args:
+            tooltype: Expected file type (personality, taskflow, etc.).
+            toolname: Dotted module path, e.g. ``"examples.taskflows.echo"``.
+
+        Returns:
+            A validated Pydantic document model instance.
+
+        Raises:
+            BadToolNameError: If the tool cannot be found or loaded.
+            VersionException: If the grammar version is unsupported.
+            FileTypeException: If the filetype doesn't match expectations.
         """
-        try:
-            return self.__yamlcache[tooltype][toolname]
-        except KeyError:
-            pass
-        # Split the string to get the package and filename.
+        # Check cache first
+        if tooltype in self._cache and toolname in self._cache[tooltype]:
+            return self._cache[tooltype][toolname]
+
+        # Resolve package and filename from dotted path
         components = toolname.rsplit(".", 1)
         if len(components) != 2:
             raise BadToolNameError(
-                f'Not a valid toolname: "{toolname}". It should be something like: "packagename.filename"'
+                f'Not a valid toolname: "{toolname}". '
+                f'Expected format: "packagename.filename"'
             )
-        package = components[0]
-        filename = components[1]
+        package, filename = components
+
         try:
-            d = importlib.resources.files(package)
-            if not d.is_dir():
-                raise BadToolNameError(f"Cannot load {toolname} because {d} is not a valid directory.")
-            f = d.joinpath(filename + ".yaml")
-            with open(f) as s:
-                y = yaml.safe_load(s)
-                header = y['seclab-taskflow-agent']
-                version = header['version']
+            pkg_dir = importlib.resources.files(package)
+            if not pkg_dir.is_dir():
+                raise BadToolNameError(
+                    f"Cannot load {toolname} because {pkg_dir} is not a valid directory."
+                )
+            filepath = pkg_dir.joinpath(filename + ".yaml")
+            with filepath.open() as fh:
+                raw = yaml.safe_load(fh)
 
-                # Normalize version to string format for backwards compatibility
-                if isinstance(version, int):
-                    # Convert integer 1 to "1.0" for semver compatibility
-                    version_str = f"{version}.0"
-                elif isinstance(version, float):
-                    # Convert float 1.2 to "1.2"
-                    version_str = str(version)
-                else:
-                    # Already a string, use as-is
-                    version_str = str(version)
+            # Validate header before full parse
+            header = raw.get("seclab-taskflow-agent", {})
+            filetype = header.get("filetype", "")
+            if filetype != tooltype.value:
+                raise FileTypeException(
+                    f"Error in {filepath}: expected filetype {tooltype.value!r}, "
+                    f"got {filetype!r}."
+                )
 
-                # Validate version is 1.0
-                if version_str != "1.0":
-                    raise VersionException(
-                        f"Unsupported version: {version}. Only version 1.0 is supported."
-                    )
-                filetype = header['filetype'] 
-                if filetype != tooltype.value:
-                    raise FileTypeException(f"Error in {f}: expected filetype to be {tooltype}, but it's {filetype}.")
-                if tooltype not in self.__yamlcache:
-                    self.__yamlcache[tooltype] = {}
-                self.__yamlcache[tooltype][toolname] = y
-                return y
-        except ModuleNotFoundError as e:
-            raise BadToolNameError(f"Cannot load {toolname}: {e}")
+            # Parse into the appropriate Pydantic model
+            model_cls = DOCUMENT_MODELS.get(filetype)
+            if model_cls is None:
+                raise BadToolNameError(
+                    f"Unknown filetype {filetype!r} in {toolname}"
+                )
+
+            try:
+                doc = model_cls(**raw)
+            except ValidationError as exc:
+                # Surface version errors as VersionException for compat
+                for err in exc.errors():
+                    if "Unsupported version" in str(err.get("msg", "")):
+                        raise VersionException(str(err["msg"])) from exc
+                raise BadToolNameError(
+                    f"Validation error loading {toolname}: {exc}"
+                ) from exc
+
+            # Cache and return
+            if tooltype not in self._cache:
+                self._cache[tooltype] = {}
+            self._cache[tooltype][toolname] = doc
+            return doc
+
+        except ModuleNotFoundError as exc:
+            raise BadToolNameError(f"Cannot load {toolname}: {exc}") from exc
         except FileNotFoundError:
-            # deal with editor temp files etc. that might have disappeared
-            raise BadToolNameError(f"Cannot load {toolname} because {f} is not a valid file.")
-        except ValueError as e:
-            raise BadToolNameError(f"Cannot load {toolname}: {e}")
+            raise BadToolNameError(
+                f"Cannot load {toolname} because {filepath} is not a valid file."
+            )
+        except ValueError as exc:
+            raise BadToolNameError(f"Cannot load {toolname}: {exc}") from exc
