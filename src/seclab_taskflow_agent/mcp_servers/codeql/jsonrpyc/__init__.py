@@ -18,7 +18,6 @@ from .__meta__ import (  # noqa
     __contact__,
     __copyright__,
     __credits__,
-    __doc__,
     __email__,
     __license__,
     __status__,
