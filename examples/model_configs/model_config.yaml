@@ -6,4 +6,6 @@ seclab-taskflow-agent:
   filetype: model_config
 models:
   gpt_default: gpt-4.1
-  gpt_latest: gpt-5
+  gpt_latest: gpt-5.4
+gpt_responses:
+  api_type: responses
