@@ -309,7 +309,7 @@ async def deploy_task_agents(
     model_settings = ModelSettings(**model_params)
 
     # Build MCP servers and collect server prompts
-    entries = build_mcp_servers(available_tools, toolboxes, blocked_tools, headless)
+    entries = build_mcp_servers(available_tools, toolboxes, blocked_tools, headless=headless)
     mcp_params = mcp_client_params(available_tools, toolboxes)
     server_prompts = [sp for _, (_, _, sp, _) in mcp_params.items()]
 
@@ -585,7 +585,7 @@ async def run_main(
                     available_tools, global_variables, inputs,
                 )
 
-                async def run_prompts(async_task: bool = False, max_concurrent_tasks: int = 5) -> bool:
+                async def run_prompts(*, async_task: bool = False, max_concurrent_tasks: int = 5) -> bool:
                     if run:
                         await render_model_output("** 🤖🐚 Executing Shell Task\n")
                         try:
