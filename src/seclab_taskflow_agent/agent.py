@@ -6,7 +6,6 @@ import logging
 import os
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlparse
 
 from agents import (
     Agent,
@@ -26,7 +25,7 @@ from agents.run import DEFAULT_MAX_TURNS
 from dotenv import find_dotenv, load_dotenv
 from openai import AsyncOpenAI
 
-from .capi import AI_API_ENDPOINT_ENUM, COPILOT_INTEGRATION_ID, get_AI_endpoint, get_AI_token
+from .capi import get_AI_endpoint, get_AI_token, get_provider
 
 __all__ = [
     "DEFAULT_MODEL",
@@ -39,17 +38,8 @@ __all__ = [
 load_dotenv(find_dotenv(usecwd=True))
 
 api_endpoint = get_AI_endpoint()
-match urlparse(api_endpoint).netloc:
-    case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
-        default_model = "gpt-4.1"
-    case AI_API_ENDPOINT_ENUM.AI_API_MODELS_GITHUB:
-        default_model = "openai/gpt-4.1"
-    case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
-        default_model = "gpt-4.1"
-    case _:
-        default_model = "please-set-default-model-via-env"
-
-DEFAULT_MODEL = os.getenv("COPILOT_DEFAULT_MODEL", default=default_model)
+_default_provider = get_provider(api_endpoint)
+DEFAULT_MODEL = os.getenv("COPILOT_DEFAULT_MODEL", default=_default_provider.default_model)
 
 
 class TaskRunHooks(RunHooks):
@@ -186,10 +176,12 @@ class TaskAgent:
         else:
             resolved_token = get_AI_token()
 
+        # Only send provider-specific headers to matching endpoints
+        provider = get_provider(resolved_endpoint)
         client = AsyncOpenAI(
             base_url=resolved_endpoint,
             api_key=resolved_token,
-            default_headers={"Copilot-Integration-Id": COPILOT_INTEGRATION_ID},
+            default_headers=provider.extra_headers or None,
         )
         set_tracing_disabled(True)
         self.run_hooks = run_hooks or TaskRunHooks()

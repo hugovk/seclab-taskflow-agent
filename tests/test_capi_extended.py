@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
-from seclab_taskflow_agent.capi import AI_API_ENDPOINT_ENUM, supports_tool_calls
+from seclab_taskflow_agent.capi import get_provider, supports_tool_calls
 
 
 class TestSupportsToolCalls:
-    """Tests for supports_tool_calls with unknown endpoints."""
+    """Tests for supports_tool_calls with various endpoints."""
 
     def test_unknown_endpoint_known_model(self, monkeypatch):
         """Unknown endpoint returns True when model is in the catalog."""
@@ -67,31 +67,59 @@ class TestSupportsToolCalls:
         }
         assert supports_tool_calls("some-model", models) is False
 
-    def test_openai_endpoint_gpt_model(self, monkeypatch):
-        """OpenAI endpoint returns True for models containing 'gpt-'."""
+    def test_openai_endpoint_model_in_catalog(self, monkeypatch):
+        """OpenAI endpoint returns True for known chat model families."""
         monkeypatch.setenv("AI_API_ENDPOINT", "https://api.openai.com/v1")
-        assert supports_tool_calls("gpt-4o", {}) is True
+        models = {"gpt-4o": {"id": "gpt-4o"}}
+        assert supports_tool_calls("gpt-4o", models) is True
 
-    def test_openai_endpoint_non_gpt_model(self, monkeypatch):
-        """OpenAI endpoint returns False for non-GPT models."""
+    def test_openai_endpoint_o_series(self, monkeypatch):
+        """OpenAI endpoint returns True for o-series reasoning models."""
         monkeypatch.setenv("AI_API_ENDPOINT", "https://api.openai.com/v1")
-        assert supports_tool_calls("claude-3-opus", {}) is False
+        for mid in ("o1-preview", "o3-mini", "o4-mini"):
+            models = {mid: {"id": mid}}
+            assert supports_tool_calls(mid, models) is True
+
+    def test_openai_endpoint_non_chat_model(self, monkeypatch):
+        """OpenAI endpoint returns False for embeddings/audio/image models."""
+        monkeypatch.setenv("AI_API_ENDPOINT", "https://api.openai.com/v1")
+        for mid in ("text-embedding-ada-002", "whisper-1", "dall-e-3", "tts-1"):
+            models = {mid: {"id": mid}}
+            assert supports_tool_calls(mid, models) is False
+
+    def test_openai_endpoint_model_not_in_catalog(self, monkeypatch):
+        """OpenAI endpoint returns False when model is not in catalog."""
+        monkeypatch.setenv("AI_API_ENDPOINT", "https://api.openai.com/v1")
+        assert supports_tool_calls("missing-model", {}) is False
+
+    def test_explicit_endpoint_override(self):
+        """supports_tool_calls accepts an explicit endpoint parameter."""
+        models = {"my-model": {"id": "my-model", "capabilities": {"supports": {"tool_calls": True}}}}
+        assert supports_tool_calls("my-model", models, endpoint="https://api.githubcopilot.com") is True
 
 
-class TestAIAPIEndpointEnum:
-    """Tests for the AI_API_ENDPOINT_ENUM StrEnum."""
+class TestGetProvider:
+    """Tests for the provider registry."""
 
-    def test_enum_values(self):
-        """All expected endpoint values exist."""
-        assert AI_API_ENDPOINT_ENUM.AI_API_MODELS_GITHUB == "models.github.ai"
-        assert AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT == "api.githubcopilot.com"
-        assert AI_API_ENDPOINT_ENUM.AI_API_OPENAI == "api.openai.com"
+    def test_copilot_provider(self):
+        p = get_provider("https://api.githubcopilot.com")
+        assert p.name == "copilot"
+        assert p.base_url == "https://api.githubcopilot.com"
+        assert "Copilot-Integration-Id" in p.extra_headers
 
-    def test_to_url_models_github(self):
-        assert AI_API_ENDPOINT_ENUM.AI_API_MODELS_GITHUB.to_url() == "https://models.github.ai/inference"
+    def test_github_models_provider(self):
+        p = get_provider("https://models.github.ai/inference")
+        assert p.name == "github-models"
+        assert p.models_catalog == "catalog/models"
+        assert p.default_model == "openai/gpt-4.1"
 
-    def test_to_url_copilot(self):
-        assert AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT.to_url() == "https://api.githubcopilot.com"
+    def test_openai_provider(self):
+        p = get_provider("https://api.openai.com/v1")
+        assert p.name == "openai"
+        assert not p.extra_headers
 
-    def test_to_url_openai(self):
-        assert AI_API_ENDPOINT_ENUM.AI_API_OPENAI.to_url() == "https://api.openai.com/v1"
+    def test_custom_endpoint(self):
+        p = get_provider("https://my-custom-llm.example.com/v1")
+        assert p.name == "custom"
+        assert p.base_url == "https://my-custom-llm.example.com/v1"
+        assert not p.extra_headers
