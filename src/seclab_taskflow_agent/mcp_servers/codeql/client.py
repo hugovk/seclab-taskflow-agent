@@ -19,6 +19,16 @@ from seclab_taskflow_agent.path_utils import log_file_name
 
 # this is a local fork of https://github.com/riga/jsonrpyc modified for our purposes
 from . import jsonrpyc
+from .exceptions import (
+    LegacyServerNotSupportedError,
+    NoActiveConnectionError,
+    NoActiveDatabaseError,
+    NonAbsoluteURIError,
+    NotFileURIError,
+    QueryRunError,
+    QuickEvalTargetNotFoundError,
+    UnsupportedOutputFormatError,
+)
 
 WAIT_INTERVAL = 0.1
 
@@ -194,10 +204,10 @@ class CodeQL:
         template_values: dict | None = None,
     ):
         if not self.active_database:
-            raise RuntimeError("No Active Database")
+            raise NoActiveDatabaseError()
 
         if not self.active_connection:
-            raise RuntimeError("No Active Connection")
+            raise NoActiveConnectionError()
 
         if isinstance(quick_eval_pos, dict):
             # A quick eval position contains:
@@ -302,7 +312,7 @@ class CodeQL:
     def _resolve_query_server(self):
         help_msg = shell_command_to_string(self.codeql_cli + ["excute", "--help"])
         if not re.search("query-server2", help_msg):
-            raise RuntimeError("Legacy server not supported!")
+            raise LegacyServerNotSupportedError()
         return "query-server2"
 
     def _resolve_library_paths(self, query_path):
@@ -463,11 +473,11 @@ def _file_uri_to_path(uri):
     # internally the codeql client will resolve both relative and full paths
     # regardless of root directory differences
     if not uri.startswith("file:///"):
-        raise ValueError("URI path should be formatted as absolute")
+        raise NonAbsoluteURIError()
     # note: don't try to parse paths like "file://a/b" because that returns "/b", should be "file:///a/b"
     parsed = urlparse(uri)
     if parsed.scheme != "file":
-        raise ValueError(f"Not a file:// uri: {uri}")
+        raise NotFileURIError(uri)
     path = unquote(parsed.path)
     region = None
     if ":" in path:
@@ -605,7 +615,7 @@ def run_query(
     if target:
         target_pos = get_query_position(query_path, target)
         if not target_pos:
-            raise ValueError(f"Could not resolve quick eval target for {target}")
+            raise QuickEvalTargetNotFoundError(target)
     try:
         with (
             QueryServer(database, keep_alive=keep_alive, log_stderr=log_stderr) as server,
@@ -633,7 +643,7 @@ def run_query(
                 case "sarif":
                     result = server._bqrs_to_sarif(bqrs_path, server._query_info(query_path))
                 case _:
-                    raise ValueError("Unsupported output format {fmt}")
+                    raise UnsupportedOutputFormatError(fmt)
     except Exception as e:
-        raise RuntimeError(f"Error in run_query: {e}") from e
+        raise QueryRunError(e) from e
     return result

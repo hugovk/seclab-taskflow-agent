@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 import httpx
 from strenum import StrEnum
 
+from .exceptions import AITokenNotFoundError, UnsupportedEndpointError
+
 __all__ = [
     "AI_API_ENDPOINT_ENUM",
     "COPILOT_INTEGRATION_ID",
@@ -38,7 +40,7 @@ class AI_API_ENDPOINT_ENUM(StrEnum):
             case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
                 return f"https://{self}/v1"
             case _:
-                raise ValueError(f"Unsupported endpoint: {self}")
+                raise UnsupportedEndpointError(self)
 
 
 COPILOT_INTEGRATION_ID = "vscode-chat"
@@ -61,7 +63,7 @@ def get_AI_token() -> str:
     token = os.getenv("COPILOT_TOKEN")
     if token:
         return token
-    raise RuntimeError("AI_API_TOKEN environment variable is not set.")
+    raise AITokenNotFoundError()
 
 
 # assume we are >= python 3.9 for our type hints

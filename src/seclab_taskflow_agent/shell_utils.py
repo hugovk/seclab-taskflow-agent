@@ -9,6 +9,8 @@ import tempfile
 
 from mcp.types import CallToolResult, TextContent
 
+from .exceptions import ShellCommandError
+
 __all__ = ["shell_command_to_string", "shell_exec_with_temporary_file", "shell_tool_call"]
 
 
@@ -23,7 +25,7 @@ def shell_command_to_string(cmd: list[str]) -> str:
     stdout, stderr = p.communicate()
     p.wait()
     if p.returncode:
-        raise RuntimeError(f"Command {cmd} failed: {stderr}")
+        raise ShellCommandError(cmd, stderr)
     return stdout
 
 

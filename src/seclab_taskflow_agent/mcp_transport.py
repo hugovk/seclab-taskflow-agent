@@ -35,6 +35,8 @@ from urllib.parse import urlparse
 
 from agents.mcp import MCPServerStdio
 
+from .exceptions import MCPConnectionTimeoutError, MissingHostPortError, ProcessThreadTimeoutError
+
 # Exit codes that are considered normal termination.
 _EXPECTED_EXIT_CODES: frozenset[int] = frozenset({0, -signal.SIGTERM})
 
@@ -109,7 +111,7 @@ class StreamableMCPThread(Thread):
         host = parsed.hostname
         port = parsed.port
         if host is None or port is None:
-            raise ValueError(f"URL must include a host and port: {self.url}")
+            raise MissingHostPortError(self.url)
         deadline = asyncio.get_event_loop().time() + timeout
         while True:
             try:
@@ -119,7 +121,7 @@ class StreamableMCPThread(Thread):
                 return
             except (OSError, ConnectionRefusedError):
                 if asyncio.get_event_loop().time() > deadline:
-                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds")
+                    raise MCPConnectionTimeoutError(host, port, timeout)
                 await asyncio.sleep(poll_interval)
 
     def wait_for_connection(
@@ -139,7 +141,7 @@ class StreamableMCPThread(Thread):
         host = parsed.hostname
         port = parsed.port
         if host is None or port is None:
-            raise ValueError(f"URL must include a host and port: {self.url}")
+            raise MissingHostPortError(self.url)
         deadline = time.time() + timeout
         while True:
             try:
@@ -147,7 +149,7 @@ class StreamableMCPThread(Thread):
                     return
             except OSError:
                 if time.time() > deadline:
-                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds")
+                    raise MCPConnectionTimeoutError(host, port, timeout)
                 time.sleep(poll_interval)
 
     def run(self) -> None:
@@ -216,7 +218,7 @@ class StreamableMCPThread(Thread):
         """
         self.join(timeout)
         if self.is_alive():
-            raise RuntimeError("Process thread did not exit within timeout.")
+            raise ProcessThreadTimeoutError()
         if self.exception is not None:
             raise self.exception
 

@@ -29,6 +29,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from .exceptions import MutuallyExclusiveTaskFieldsError, UnsupportedVersionError
+
 # Valid API type values for model configuration.
 ApiType = Literal["chat_completions", "responses"]
 
@@ -62,9 +64,7 @@ class TaskflowHeader(BaseModel):
     @classmethod
     def _validate_version(cls, v: str) -> str:
         if v != SUPPORTED_VERSION:
-            raise ValueError(
-                f"Unsupported version: {v}. Only version {SUPPORTED_VERSION} is supported."
-            )
+            raise UnsupportedVersionError(v, SUPPORTED_VERSION)
         return v
 
 
@@ -106,7 +106,7 @@ class TaskDefinition(BaseModel):
     @model_validator(mode="after")
     def _run_xor_prompt(self) -> TaskDefinition:
         if self.run and self.user_prompt:
-            raise ValueError("shell task ('run') and prompt task ('user_prompt') are mutually exclusive")
+            raise MutuallyExclusiveTaskFieldsError()
         return self
 
 

@@ -40,6 +40,44 @@ class FileTypeException(Exception):
     pass
 
 
+class InvalidToolFormatError(BadToolNameError):
+    def __init__(self, toolname: str) -> None:
+        super().__init__(
+            f'Not a valid toolname: "{toolname}". '
+            f'Expected format: "packagename.filename"'
+        )
+
+
+class ToolDirNotFoundError(BadToolNameError):
+    def __init__(self, toolname: str, pkg_dir: object) -> None:
+        super().__init__(f"Cannot load {toolname} because {pkg_dir} is not a valid directory.")
+
+
+class FiletypeMismatchError(FileTypeException):
+    def __init__(self, filepath: object, expected: str, got: str) -> None:
+        super().__init__(f"Error in {filepath}: expected filetype {expected!r}, got {got!r}.")
+
+
+class UnknownFiletypeError(BadToolNameError):
+    def __init__(self, filetype: str, toolname: str) -> None:
+        super().__init__(f"Unknown filetype {filetype!r} in {toolname}")
+
+
+class ToolValidationError(BadToolNameError):
+    def __init__(self, toolname: str, exc: Exception) -> None:
+        super().__init__(f"Validation error loading {toolname}: {exc}")
+
+
+class ToolLoadError(BadToolNameError):
+    def __init__(self, toolname: str, exc: Exception) -> None:
+        super().__init__(f"Cannot load {toolname}: {exc}")
+
+
+class ToolFileNotFoundError(BadToolNameError):
+    def __init__(self, toolname: str, filepath: object) -> None:
+        super().__init__(f"Cannot load {toolname} because {filepath} is not a valid file.")
+
+
 class AvailableToolType(Enum):
     Personality = "personality"
     Taskflow = "taskflow"
@@ -108,18 +146,13 @@ class AvailableTools:
         # Resolve package and filename from dotted path
         components = toolname.rsplit(".", 1)
         if len(components) != 2:
-            raise BadToolNameError(
-                f'Not a valid toolname: "{toolname}". '
-                f'Expected format: "packagename.filename"'
-            )
+            raise InvalidToolFormatError(toolname)
         package, filename = components
 
         try:
             pkg_dir = importlib.resources.files(package)
             if not pkg_dir.is_dir():
-                raise BadToolNameError(
-                    f"Cannot load {toolname} because {pkg_dir} is not a valid directory."
-                )
+                raise ToolDirNotFoundError(toolname, pkg_dir)
             filepath = pkg_dir.joinpath(filename + ".yaml")
             with filepath.open() as fh:
                 raw = yaml.safe_load(fh)
@@ -128,17 +161,12 @@ class AvailableTools:
             header = raw.get("seclab-taskflow-agent", {})
             filetype = header.get("filetype", "")
             if filetype != tooltype.value:
-                raise FileTypeException(
-                    f"Error in {filepath}: expected filetype {tooltype.value!r}, "
-                    f"got {filetype!r}."
-                )
+                raise FiletypeMismatchError(filepath, tooltype.value, filetype)
 
             # Parse into the appropriate Pydantic model
             model_cls = DOCUMENT_MODELS.get(filetype)
             if model_cls is None:
-                raise BadToolNameError(
-                    f"Unknown filetype {filetype!r} in {toolname}"
-                )
+                raise UnknownFiletypeError(filetype, toolname)
 
             try:
                 doc = model_cls(**raw)
@@ -147,9 +175,7 @@ class AvailableTools:
                 for err in exc.errors():
                     if "Unsupported version" in str(err.get("msg", "")):
                         raise VersionException(str(err["msg"])) from exc
-                raise BadToolNameError(
-                    f"Validation error loading {toolname}: {exc}"
-                ) from exc
+                raise ToolValidationError(toolname, exc) from exc
 
             # Cache and return
             if tooltype not in self._cache:
@@ -158,10 +184,8 @@ class AvailableTools:
             return doc
 
         except ModuleNotFoundError as exc:
-            raise BadToolNameError(f"Cannot load {toolname}: {exc}") from exc
+            raise ToolLoadError(toolname, exc) from exc
         except FileNotFoundError:
-            raise BadToolNameError(
-                f"Cannot load {toolname} because {filepath} is not a valid file."
-            )
+            raise ToolFileNotFoundError(toolname, filepath)
         except ValueError as exc:
-            raise BadToolNameError(f"Cannot load {toolname}: {exc}") from exc
+            raise ToolLoadError(toolname, exc) from exc

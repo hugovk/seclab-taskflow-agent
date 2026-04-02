@@ -37,6 +37,20 @@ from openai.types.responses import ResponseTextDeltaEvent
 from .agent import DEFAULT_MODEL, TaskAgent, TaskAgentHooks, TaskRunHooks
 from .available_tools import AvailableTools
 from .env_utils import TmpEnv
+from .exceptions import (
+    MaxRateLimitReachedError,
+    NoAgentsResolvedError,
+    PersonalityNotFoundError,
+    PromptTemplateRenderingError,
+    ResultTextNotJSONError,
+    ReusableTaskflowNotFoundError,
+    ReusableTaskflowTooManyTasksError,
+    ShellAndPromptMutuallyExclusiveError,
+    TaskModelSettingsTypeError,
+    TemplateRenderingError,
+    ToolResultNotJSONError,
+    UnknownModelSettingsError,
+)
 from .mcp_lifecycle import MCP_CLEANUP_TIMEOUT, build_mcp_servers, mcp_session_task
 from .models import ModelConfigDocument, PersonalityDocument, TaskDefinition
 from .mcp_prompt import mcp_system_prompt
@@ -78,9 +92,7 @@ def _resolve_model_config(
     models_params: dict[str, dict[str, Any]] = m_config.model_settings or {}
     unknown = set(models_params) - set(model_keys)
     if unknown:
-        raise ValueError(
-            f"Settings section of model_config file {model_config_ref} contains models not in the model section: {unknown}"
-        )
+        raise UnknownModelSettingsError(model_config_ref, unknown)
     return model_keys, model_dict, models_params, m_config.api_type
 
 
@@ -103,9 +115,9 @@ def _merge_reusable_task(
     """
     reusable_doc = available_tools.get_taskflow(task.uses)
     if reusable_doc is None:
-        raise ValueError(f"No such reusable taskflow: {task.uses}")
+        raise ReusableTaskflowNotFoundError(task.uses)
     if len(reusable_doc.taskflow) > 1:
-        raise ValueError("Reusable taskflows can only contain 1 task")
+        raise ReusableTaskflowTooManyTasksError()
     parent_task = reusable_doc.taskflow[0].task
     merged: dict[str, Any] = parent_task.model_dump(by_alias=True, exclude_defaults=True)
     current: dict[str, Any] = task.model_dump(by_alias=True, exclude_defaults=True)
@@ -147,7 +159,7 @@ def _resolve_task_model(
 
     task_model_settings: dict[str, Any] | Any = task.model_settings or {}
     if not isinstance(task_model_settings, dict):
-        raise ValueError(f"model_settings in task {task.name or ''} needs to be a dictionary")
+        raise TaskModelSettingsTypeError(task.name or '')
 
     # Task-level overrides can also set engine keys
     task_settings = dict(task_model_settings)
@@ -198,14 +210,14 @@ async def _build_prompts_to_run(
             raise
         except json.JSONDecodeError as exc:
             logging.critical(f"Could not parse tool result as JSON: {last_mcp_tool_results[-1][:200]}")
-            raise ValueError("Tool result is not valid JSON") from exc
+            raise ToolResultNotJSONError() from exc
 
         text = last_result.get("text", "")
         try:
             iterable_result = json.loads(text)
         except json.JSONDecodeError as exc:
             logging.critical(f"Could not parse result text: {text}")
-            raise ValueError("Result text is not valid JSON") from exc
+            raise ResultTextNotJSONError() from exc
         try:
             iter(iterable_result)
         except TypeError:
@@ -228,7 +240,7 @@ async def _build_prompts_to_run(
                     prompts_to_run.append(rendered_prompt)
                 except jinja2.TemplateError as e:
                     logging.error(f"Error rendering template for result {value}: {e}")
-                    raise ValueError(f"Template rendering failed: {e}")
+                    raise TemplateRenderingError(e)
 
         # Consume only after all prompts rendered successfully so that
         # the result remains available for retry/resume on failure.
@@ -403,7 +415,7 @@ async def deploy_task_agents(
                         max_retry -= 1
                     except RateLimitError:
                         if rate_limit_backoff == MAX_RATE_LIMIT_BACKOFF:
-                            raise APITimeoutError("Max rate limit backoff reached")
+                            raise MaxRateLimitReachedError()
                         if rate_limit_backoff > MAX_RATE_LIMIT_BACKOFF:
                             rate_limit_backoff = MAX_RATE_LIMIT_BACKOFF
                         else:
@@ -556,7 +568,7 @@ async def run_main(
             inputs = task.inputs or {}
             task_prompt = task.user_prompt or ""
             if run and task_prompt:
-                raise ValueError("shell task and prompt task are mutually exclusive!")
+                raise ShellAndPromptMutuallyExclusiveError()
             must_complete = task.must_complete
             max_turns = task.max_steps or DEFAULT_MAX_TURNS
             toolboxes_override = task.toolboxes or []
@@ -577,7 +589,7 @@ async def run_main(
                     )
                 except jinja2.TemplateError as e:
                     logging.error(f"Template rendering error: {e}")
-                    raise ValueError(f"Failed to render prompt template: {e}") from e
+                    raise PromptTemplateRenderingError(e) from e
 
             with TmpEnv(env):
                 prompts_to_run: list[str] = await _build_prompts_to_run(
@@ -611,14 +623,11 @@ async def run_main(
                         for agent_name in current_agents:
                             personality = available_tools.get_personality(agent_name)
                             if personality is None:
-                                raise ValueError(f"No such personality: {agent_name}")
+                                raise PersonalityNotFoundError(agent_name)
                             resolved_agents[agent_name] = personality
 
                         if not resolved_agents:
-                            raise ValueError(
-                                "No agents resolved for this task. "
-                                "Specify a personality with -p or provide an agents list."
-                            )
+                            raise NoAgentsResolvedError()
 
                         async def _deploy(ra: dict, pp: str) -> bool:
                             async with semaphore:
