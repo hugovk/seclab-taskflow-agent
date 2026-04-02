@@ -4,6 +4,7 @@ from __future__ import annotations
 __all__: list[str] = []
 
 import json
+import logging
 import os
 import re
 import sys
@@ -26,6 +27,8 @@ from .__meta__ import (  # noqa
 )
 
 Callback: TypeAlias = Callable[[Exception | None, Any | None], None]
+
+logger = logging.getLogger(__name__)
 
 
 class InputStream(Protocol):
@@ -442,7 +445,7 @@ class RPC:
         # create the request
         params = params if params else {"args": args, "kwargs": kwargs}
         req = Spec.request(method, id=id, params=params)
-        print(f"-> {req}")
+        logger.debug(f"-> {req}")
         msg = f"Content-Length: {len(req)}\r\n\r\n{req}"
         self._write(msg)
 
@@ -472,7 +475,7 @@ class RPC:
         :param msg: The incoming jsonrpc message.
         :return: None.
         """
-        print(f"<- {msg}")
+        logger.debug(f"<- {msg}")
         obj = json.loads(msg)
 
         # dispatch to the correct handler
@@ -736,20 +739,16 @@ class Watchdog(threading.Thread):
             if line:
                 decoded_line = line.decode("utf-8").strip()
                 match = re.search(r"^Content-Length:\s*([0-9]+)", decoded_line, re.IGNORECASE)
-                debug = False
                 if match:
-                    if debug:
-                        print(f"Incoming message header: {decoded_line}")
+                    logger.debug(f"Incoming message header: {decoded_line}")
                     content_length = abs(int(match.group(1)))
                     _ = self.rpc.stdin.readline()
-                    if debug:
-                        print(f"Grabbing {content_length} bytes from stdin")
+                    logger.debug(f"Grabbing {content_length} bytes from stdin")
                     msg = b""
                     while len(msg) != content_length:
                         msg += self.rpc.stdin.read(content_length - len(msg))
                     decoded_msg = msg.decode("utf-8").strip()
-                    if debug:
-                        print(f"Incoming jsonrpc message: {decoded_msg}")
+                    logger.debug(f"Incoming jsonrpc message: {decoded_msg}")
                     self.rpc._handle(decoded_msg)
                 else:
                     raise ValueError(f"Don't know how to handle: {decoded_line}")
