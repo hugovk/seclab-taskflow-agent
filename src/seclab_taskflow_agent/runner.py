@@ -276,8 +276,10 @@ async def deploy_task_agents(
 
     task_id = str(uuid.uuid4())
     await render_model_output(f"** 🤖💪 Deploying Task Flow Agent(s): {list(agents.keys())}\n")
-    await render_model_output(f"** 🤖💪 Task ID: {task_id}\n")
-    await render_model_output(f"** 🤖💪 Model  : {model}{', params: ' + str(model_par) if model_par else ''}\n")
+    await render_model_output(f"** 🤖💪 Task ID : {task_id}\n")
+    await render_model_output(f"** 🤖💪 Model   : {model}{', params: ' + str(model_par) if model_par else ''}\n")
+    if endpoint:
+        await render_model_output(f"** 🤖💪 Endpoint: {endpoint}\n")
 
     # Resolve toolboxes from personality definitions or override
     toolboxes: list[str] = []
