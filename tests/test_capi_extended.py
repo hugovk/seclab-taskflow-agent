@@ -104,13 +104,13 @@ class TestGetProvider:
     def test_copilot_provider(self):
         p = get_provider("https://api.githubcopilot.com")
         assert p.name == "copilot"
-        assert p.base_url == "https://api.githubcopilot.com"
+        assert p.base_url == "https://api.githubcopilot.com/"
         assert "Copilot-Integration-Id" in p.extra_headers
 
     def test_github_models_provider(self):
         p = get_provider("https://models.github.ai/inference")
         assert p.name == "github-models"
-        assert p.models_catalog == "catalog/models"
+        assert p.models_catalog == "/catalog/models"
         assert p.default_model == "openai/gpt-4.1"
 
     def test_openai_provider(self):
@@ -121,5 +121,5 @@ class TestGetProvider:
     def test_custom_endpoint(self):
         p = get_provider("https://my-custom-llm.example.com/v1")
         assert p.name == "custom"
-        assert p.base_url == "https://my-custom-llm.example.com/v1"
+        assert p.base_url == "https://my-custom-llm.example.com/v1/"
         assert not p.extra_headers

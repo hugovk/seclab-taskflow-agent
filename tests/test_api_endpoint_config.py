@@ -41,9 +41,9 @@ class TestAPIEndpoint:
 
     def test_provider_base_urls(self):
         """Test that providers resolve to expected base URLs."""
-        assert get_provider("https://models.github.ai/inference").base_url == "https://models.github.ai/inference"
-        assert get_provider("https://api.githubcopilot.com").base_url == "https://api.githubcopilot.com"
-        assert get_provider("https://api.openai.com/v1").base_url == "https://api.openai.com/v1"
+        assert get_provider("https://models.github.ai/inference").base_url == "https://models.github.ai/inference/"
+        assert get_provider("https://api.githubcopilot.com").base_url == "https://api.githubcopilot.com/"
+        assert get_provider("https://api.openai.com/v1").base_url == "https://api.openai.com/v1/"
 
     def test_unsupported_endpoint(self, monkeypatch):
         """Test that unsupported API endpoint falls back gracefully."""

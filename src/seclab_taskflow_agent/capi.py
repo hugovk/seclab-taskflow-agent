@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any
@@ -32,7 +33,7 @@ __all__ = [
     "supports_tool_calls",
 ]
 
-COPILOT_INTEGRATION_ID = "vscode-chat"
+COPILOT_INTEGRATION_ID = os.getenv("COPILOT_INTEGRATION_ID", "vscode-chat")
 
 
 # ---------------------------------------------------------------------------
@@ -45,13 +46,17 @@ class APIProvider:
 
     name: str
     base_url: str
-    models_catalog: str = "models"
+    models_catalog: str = "/models"
     default_model: str = "gpt-4.1"
-    extra_headers: dict[str, str] = field(default_factory=dict)
+    extra_headers: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        # Ensure base_url ends with / so httpx URL.join() preserves the path
+        if self.base_url and not self.base_url.endswith("/"):
+            object.__setattr__(self, "base_url", self.base_url + "/")
         # Freeze mutable headers so singleton providers can't be mutated
-        object.__setattr__(self, "extra_headers", MappingProxyType(self.extra_headers))
+        if isinstance(self.extra_headers, dict):
+            object.__setattr__(self, "extra_headers", MappingProxyType(self.extra_headers))
 
     # -- response parsing -----------------------------------------------------
 
@@ -123,12 +128,13 @@ _PROVIDERS: dict[str, APIProvider] = {
     "models.github.ai": _GitHubModelsProvider(
         name="github-models",
         base_url="https://models.github.ai/inference",
-        models_catalog="catalog/models",
+        models_catalog="/catalog/models",
         default_model="openai/gpt-4.1",
     ),
     "api.openai.com": _OpenAIProvider(
         name="openai",
         base_url="https://api.openai.com/v1",
+        models_catalog="/v1/models",
         default_model="gpt-4.1",
     ),
 }
