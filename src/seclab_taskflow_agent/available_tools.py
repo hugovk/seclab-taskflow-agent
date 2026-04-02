@@ -12,6 +12,8 @@ from __future__ import annotations
 __all__ = ["AvailableTools"]
 
 import importlib.resources
+import os
+import sys
 from enum import Enum
 from typing import Union
 
@@ -46,6 +48,16 @@ class AvailableToolType(Enum):
     Prompt = "prompt"
     Toolbox = "toolbox"
     ModelConfig = "model_config"
+
+
+# Maps each AvailableToolType to the conventional subdirectory name used in packages
+_SUBDIR_MAP: dict[AvailableToolType, str] = {
+    AvailableToolType.Taskflow: "taskflows",
+    AvailableToolType.Personality: "personalities",
+    AvailableToolType.Toolbox: "toolboxes",
+    AvailableToolType.Prompt: "prompts",
+    AvailableToolType.ModelConfig: "model_configs",
+}
 
 
 # Union of all document model types returned by AvailableTools
@@ -85,6 +97,70 @@ class AvailableTools:
     def get_tool(self, tooltype: AvailableToolType, toolname: str) -> DocumentModel:
         """Generic loader — prefer the typed ``get_*()`` methods."""
         return self._load(tooltype, toolname)
+
+    def list_resources(
+        self, tooltype: AvailableToolType | None = None
+    ) -> dict[AvailableToolType, list[str]]:
+        """Discover all available YAML resources across the Python path.
+
+        Scans every directory in ``sys.path`` (including the current working
+        directory when the empty-string entry is present) for Python packages
+        that contain a conventional resource subdirectory (e.g. ``taskflows/``,
+        ``personalities/``, …).  Each ``.yaml`` file found in such a
+        subdirectory is returned as a fully-qualified dotted resource name of
+        the form ``<package>.<subdir>.<stem>``.
+
+        Args:
+            tooltype: When provided, only resources of that type are returned.
+                      When ``None`` (default) all types are returned.
+
+        Returns:
+            A mapping from :class:`AvailableToolType` to a sorted list of
+            dotted resource names.
+        """
+        types_to_scan = [tooltype] if tooltype is not None else list(AvailableToolType)
+        result: dict[AvailableToolType, list[str]] = {t: [] for t in types_to_scan}
+
+        seen_dirs: set[str] = set()
+        for path_entry in sys.path:
+            actual_path = path_entry if path_entry else os.getcwd()
+            actual_path = os.path.abspath(actual_path)
+            if actual_path in seen_dirs or not os.path.isdir(actual_path):
+                continue
+            seen_dirs.add(actual_path)
+
+            try:
+                top_level_entries = os.listdir(actual_path)
+            except PermissionError:
+                continue
+
+            for pkg_name in top_level_entries:
+                pkg_path = os.path.join(actual_path, pkg_name)
+                if not os.path.isdir(pkg_path) or pkg_name.startswith("."):
+                    continue
+
+                for tt in types_to_scan:
+                    subdir = _SUBDIR_MAP[tt]
+                    subdir_path = os.path.join(pkg_path, subdir)
+                    if not os.path.isdir(subdir_path):
+                        continue
+                    try:
+                        yaml_files = sorted(
+                            f[:-5]
+                            for f in os.listdir(subdir_path)
+                            if f.endswith(".yaml")
+                        )
+                    except PermissionError:
+                        continue
+                    for stem in yaml_files:
+                        resource_name = f"{pkg_name}.{subdir}.{stem}"
+                        if resource_name not in result[tt]:
+                            result[tt].append(resource_name)
+
+        for tt in types_to_scan:
+            result[tt].sort()
+
+        return result
 
     def _load(self, tooltype: AvailableToolType, toolname: str) -> DocumentModel:
         """Load, validate, and cache a YAML grammar file.
@@ -158,10 +234,23 @@ class AvailableTools:
             return doc
 
         except ModuleNotFoundError as exc:
-            raise BadToolNameError(f"Cannot load {toolname}: {exc}") from exc
+            raise BadToolNameError(
+                f"Cannot load {toolname}: {exc}"
+                + self._available_hint(tooltype)
+            ) from exc
         except FileNotFoundError:
             raise BadToolNameError(
                 f"Cannot load {toolname} because {filepath} is not a valid file."
+                + self._available_hint(tooltype)
             )
         except ValueError as exc:
             raise BadToolNameError(f"Cannot load {toolname}: {exc}") from exc
+
+    def _available_hint(self, tooltype: AvailableToolType) -> str:
+        """Return a human-readable hint listing available resources of *tooltype*."""
+        available = self.list_resources(tooltype).get(tooltype, [])
+        if not available:
+            return ""
+        items = "\n  ".join(available)
+        label = _SUBDIR_MAP[tooltype]
+        return f"\n\nAvailable {label}:\n  {items}"

@@ -91,6 +91,10 @@ def main(
         bool,
         typer.Option("-l", "--list-models", help="List available tool-call models and exit."),
     ] = False,
+    list_resources: Annotated[
+        bool,
+        typer.Option("-L", "--list-resources", help="List all available resources (taskflows, personalities, etc.) and exit."),
+    ] = False,
     globals_: Annotated[
         list[str] | None,
         typer.Option("-g", "--global", help="Global variable as KEY=VALUE. Repeatable."),
@@ -113,13 +117,13 @@ def main(
     debug = debug or os.getenv("TASK_AGENT_DEBUG", "").strip().lower() in ("1", "true", "yes")
 
     # Validate mutual exclusivity (resume is standalone)
-    if resume and (personality or taskflow or list_models):
-        typer.echo("Error: --resume cannot be combined with -p, -t, or -l.", err=True)
+    if resume and (personality or taskflow or list_models or list_resources):
+        typer.echo("Error: --resume cannot be combined with -p, -t, -l, or -L.", err=True)
         raise typer.Exit(code=1)
 
-    specified = sum(bool(x) for x in [personality, taskflow, list_models])
+    specified = sum(bool(x) for x in [personality, taskflow, list_models, list_resources])
     if specified > 1:
-        typer.echo("Error: -p, -t, and -l are mutually exclusive.", err=True)
+        typer.echo("Error: -p, -t, -l, and -L are mutually exclusive.", err=True)
         raise typer.Exit(code=1)
 
     _setup_logging()
@@ -131,6 +135,18 @@ def main(
         tool_models = list_tool_call_models(get_AI_token())
         for model in tool_models:
             typer.echo(model)
+        raise typer.Exit()
+
+    # List resources mode
+    if list_resources:
+        from .available_tools import AvailableToolType, _SUBDIR_MAP
+        resources = available_tools.list_resources()
+        for tooltype in AvailableToolType:
+            names = resources.get(tooltype, [])
+            if names:
+                typer.echo(f"{_SUBDIR_MAP[tooltype]}:")
+                for name in names:
+                    typer.echo(f"  {name}")
         raise typer.Exit()
 
     if personality is None and taskflow is None and resume is None:
