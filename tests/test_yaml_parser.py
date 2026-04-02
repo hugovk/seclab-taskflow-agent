@@ -110,6 +110,7 @@ class TestListResources:
             for name in names:
                 parts = name.split(".")
                 assert len(parts) >= 3, f"Expected at least 3 parts in {name!r}"
+                assert all(p for p in parts), f"All parts must be non-empty in {name!r}"
 
     def test_not_found_error_includes_available_hint(self):
         """BadToolNameError for missing taskflow includes available taskflow list."""

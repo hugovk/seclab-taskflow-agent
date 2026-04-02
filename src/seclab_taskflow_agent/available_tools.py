@@ -119,10 +119,13 @@ class AvailableTools:
             dotted resource names.
         """
         types_to_scan = [tooltype] if tooltype is not None else list(AvailableToolType)
-        result: dict[AvailableToolType, list[str]] = {t: [] for t in types_to_scan}
+        # Use sets for intermediate storage to avoid O(n) duplicate checks
+        seen: dict[AvailableToolType, set[str]] = {t: set() for t in types_to_scan}
 
         seen_dirs: set[str] = set()
         for path_entry in sys.path:
+            # An empty string in sys.path represents the current working directory
+            # per Python convention (https://docs.python.org/3/library/sys.html#sys.path).
             actual_path = path_entry if path_entry else os.getcwd()
             actual_path = os.path.abspath(actual_path)
             if actual_path in seen_dirs or not os.path.isdir(actual_path):
@@ -154,13 +157,9 @@ class AvailableTools:
                         continue
                     for stem in yaml_files:
                         resource_name = f"{pkg_name}.{subdir}.{stem}"
-                        if resource_name not in result[tt]:
-                            result[tt].append(resource_name)
+                        seen[tt].add(resource_name)
 
-        for tt in types_to_scan:
-            result[tt].sort()
-
-        return result
+        return {tt: sorted(seen[tt]) for tt in types_to_scan}
 
     def _load(self, tooltype: AvailableToolType, toolname: str) -> DocumentModel:
         """Load, validate, and cache a YAML grammar file.
