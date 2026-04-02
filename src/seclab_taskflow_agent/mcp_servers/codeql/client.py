@@ -637,7 +637,7 @@ def run_query(
                 case "sarif":
                     result = server._bqrs_to_sarif(bqrs_path, server._query_info(query_path))
                 case _:
-                    msg = "Unsupported output format {fmt}"
+                    msg = f"Unsupported output format {fmt}"
                     raise ValueError(msg)
     except Exception as e:
         raise RuntimeError(f"Error in run_query: {e}") from e
