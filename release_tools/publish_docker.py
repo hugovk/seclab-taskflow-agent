@@ -25,17 +25,17 @@ def build_and_push_image(dest_dir, image_name, tag):
     )
     # Push
     subprocess.run(["docker", "push", f"{image_name}:{tag}"], check=True)
-    print(f"Pushed {image_name}:{tag}")
+    sys.stdout.write(f"Pushed {image_name}:{tag}\n")
     digest = get_image_digest(image_name, tag)
-    print(f"Image digest: {digest}")
+    sys.stdout.write(f"Image digest: {digest}\n")
     with open("/tmp/digest.txt", "w") as f:
         f.write(digest)
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python build_and_publish_docker.py <ghcr_username/repo> <tag>")
-        print("Example: python build_and_publish_docker.py ghcr.io/anticomputer/my-python-app latest")
+        sys.stderr.write("Usage: python build_and_publish_docker.py <ghcr_username/repo> <tag>\n")
+        sys.stderr.write("Example: python build_and_publish_docker.py ghcr.io/anticomputer/my-python-app latest\n")
         sys.exit(1)
 
     image_name = sys.argv[1]
