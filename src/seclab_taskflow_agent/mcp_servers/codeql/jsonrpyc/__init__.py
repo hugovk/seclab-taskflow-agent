@@ -148,9 +148,8 @@ class Spec:
         # add the id when given
         if id is not None:
             # encode string ids
-            if isinstance(id, str):
-                id = json.dumps(id)
-            req += f',"id":{id}'
+            encoded_id = json.dumps(id) if isinstance(id, str) else id
+            req += f',"id":{encoded_id}'
 
         # add parameters when given
         if params is not None:
@@ -182,12 +181,11 @@ class Spec:
             raise RPCInvalidRequest(str(e))
 
         # encode string ids
-        if isinstance(id, str):
-            id = json.dumps(id)
+        encoded_id = json.dumps(id) if isinstance(id, str) else id
 
         # build the response string
         try:
-            res = f'{{"jsonrpc":"2.0","id":{id},"result":{json.dumps(result)}}}'
+            res = f'{{"jsonrpc":"2.0","id":{encoded_id},"result":{json.dumps(result)}}}'
         except Exception as e:
             raise RPCParseError(str(e))
 
@@ -233,11 +231,10 @@ class Spec:
             err_data += "}"
 
         # encode string ids
-        if isinstance(id, str):
-            id = json.dumps(id)
+        encoded_id = json.dumps(id) if isinstance(id, str) else id
 
         # start building the error string
-        err = f'{{"jsonrpc":"2.0","id":{id},"error":{err_data}}}'
+        err = f'{{"jsonrpc":"2.0","id":{encoded_id},"error":{err_data}}}'
 
         return err
 
@@ -426,22 +423,22 @@ class RPC:
         is_notification = callback is None and block <= 0
 
         # create a new id for requests expecting a response
-        id = -1
+        req_id = -1
         if not is_notification:
             self._i += 1
-            id = self._i
+            req_id = self._i
 
         # register the callback
         if callback is not None:
-            self._callbacks[id] = callback
+            self._callbacks[req_id] = callback
 
         # store an empty result for the meantime
         if block > 0:
-            self._results[id] = self.EMPTY_RESULT
+            self._results[req_id] = self.EMPTY_RESULT
 
         # create the request
         params = params if params else {"args": args, "kwargs": kwargs}
-        req = Spec.request(method, id=id, params=params)
+        req = Spec.request(method, id=req_id, params=params)
         print(f"-> {req}")
         msg = f"Content-Length: {len(req)}\r\n\r\n{req}"
         self._write(msg)
@@ -449,9 +446,9 @@ class RPC:
         # blocking return value behavior
         if block > 0:
             while True:
-                if self._results[id] != self.EMPTY_RESULT:
-                    result = self._results[id]
-                    del self._results[id]
+                if self._results[req_id] != self.EMPTY_RESULT:
+                    result = self._results[req_id]
+                    del self._results[req_id]
                     if isinstance(result, Exception):
                         raise result
                     return result
@@ -462,7 +459,7 @@ class RPC:
                         raise TimeoutError("RPC Request timed out")
 
                 time.sleep(block)
-        return id
+        return req_id
 
     def _handle(self, msg: str) -> None:
         """
