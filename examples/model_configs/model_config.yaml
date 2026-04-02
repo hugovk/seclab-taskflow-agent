@@ -5,7 +5,5 @@ seclab-taskflow-agent:
   version: "1.0"
   filetype: model_config
 models:
-  sonnet_default: claude-sonnet-4
-  sonnet_latest: claude-sonnet-4.5
   gpt_default: gpt-4.1
   gpt_latest: gpt-5
