@@ -89,7 +89,7 @@ Tasks can optionally specify which Model to use on the configured inference endp
         This is a user prompt.
 ```
 
-Note that model identifiers may differ between OpenAI compatible endpoint providers, make sure you change your model identifier accordingly when switching providers. If not specified, a default LLM model (`gpt-4o`) is used.
+Note that model identifiers may differ between OpenAI compatible endpoint providers, make sure you change your model identifier accordingly when switching providers. If not specified, a default LLM model (such as `gpt-4.1`) is used.
 
 Parameters to the model can also be specified in the task using the `model_settings` section:
 

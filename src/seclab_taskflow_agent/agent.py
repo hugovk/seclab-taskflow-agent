@@ -41,11 +41,11 @@ load_dotenv(find_dotenv(usecwd=True))
 api_endpoint = get_AI_endpoint()
 match urlparse(api_endpoint).netloc:
     case AI_API_ENDPOINT_ENUM.AI_API_GITHUBCOPILOT:
-        default_model = "gpt-4o"
+        default_model = "gpt-4.1"
     case AI_API_ENDPOINT_ENUM.AI_API_MODELS_GITHUB:
-        default_model = "openai/gpt-4o"
+        default_model = "openai/gpt-4.1"
     case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
-        default_model = "gpt-4o"
+        default_model = "gpt-4.1"
     case _:
         default_model = "please-set-default-model-via-env"
 
