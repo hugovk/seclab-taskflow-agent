@@ -459,7 +459,8 @@ class RPC:
                 if timeout:
                     elapsed = time.monotonic() - starting_time
                     if elapsed > timeout:
-                        raise TimeoutError("RPC Request timed out")
+                        msg = "RPC Request timed out"
+                        raise TimeoutError(msg)
 
                 time.sleep(block)
         return id

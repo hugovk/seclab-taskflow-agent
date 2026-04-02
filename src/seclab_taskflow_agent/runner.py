@@ -105,7 +105,8 @@ def _merge_reusable_task(
     if reusable_doc is None:
         raise ValueError(f"No such reusable taskflow: {task.uses}")
     if len(reusable_doc.taskflow) > 1:
-        raise ValueError("Reusable taskflows can only contain 1 task")
+        msg = "Reusable taskflows can only contain 1 task"
+        raise ValueError(msg)
     parent_task = reusable_doc.taskflow[0].task
     merged: dict[str, Any] = parent_task.model_dump(by_alias=True, exclude_defaults=True)
     current: dict[str, Any] = task.model_dump(by_alias=True, exclude_defaults=True)
@@ -198,14 +199,16 @@ async def _build_prompts_to_run(
             raise
         except json.JSONDecodeError as exc:
             logging.critical(f"Could not parse tool result as JSON: {last_mcp_tool_results[-1][:200]}")
-            raise ValueError("Tool result is not valid JSON") from exc
+            msg = "Tool result is not valid JSON"
+            raise ValueError(msg) from exc
 
         text = last_result.get("text", "")
         try:
             iterable_result = json.loads(text)
         except json.JSONDecodeError as exc:
             logging.critical(f"Could not parse result text: {text}")
-            raise ValueError("Result text is not valid JSON") from exc
+            msg = "Result text is not valid JSON"
+            raise ValueError(msg) from exc
         try:
             iter(iterable_result)
         except TypeError:
@@ -403,7 +406,8 @@ async def deploy_task_agents(
                         max_retry -= 1
                     except RateLimitError:
                         if rate_limit_backoff == MAX_RATE_LIMIT_BACKOFF:
-                            raise APITimeoutError("Max rate limit backoff reached")
+                            msg = "Max rate limit backoff reached"
+                            raise APITimeoutError(msg)
                         if rate_limit_backoff > MAX_RATE_LIMIT_BACKOFF:
                             rate_limit_backoff = MAX_RATE_LIMIT_BACKOFF
                         else:
@@ -556,7 +560,8 @@ async def run_main(
             inputs = task.inputs or {}
             task_prompt = task.user_prompt or ""
             if run and task_prompt:
-                raise ValueError("shell task and prompt task are mutually exclusive!")
+                msg = "shell task and prompt task are mutually exclusive!"
+                raise ValueError(msg)
             must_complete = task.must_complete
             max_turns = task.max_steps or DEFAULT_MAX_TURNS
             toolboxes_override = task.toolboxes or []
@@ -615,10 +620,11 @@ async def run_main(
                             resolved_agents[agent_name] = personality
 
                         if not resolved_agents:
-                            raise ValueError(
+                            msg = (
                                 "No agents resolved for this task. "
                                 "Specify a personality with -p or provide an agents list."
                             )
+                            raise ValueError(msg)
 
                         async def _deploy(ra: dict, pp: str) -> bool:
                             async with semaphore:
