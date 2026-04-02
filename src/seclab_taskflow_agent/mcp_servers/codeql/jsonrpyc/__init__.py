@@ -664,6 +664,7 @@ class Watchdog(threading.Thread):
         rpc: RPC,
         name: str = "watchdog",
         interval: float = 0.1,
+        *,
         daemon: bool = False,
         start: bool = True,
     ) -> None:
