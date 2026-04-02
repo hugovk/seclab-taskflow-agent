@@ -121,7 +121,8 @@ class TaskflowSession(BaseModel):
         """
         path = session_dir() / f"{session_id}.json"
         if not path.exists():
-            raise FileNotFoundError(f"No session checkpoint found: {session_id}")
+            msg = f"No session checkpoint found: {session_id}"
+            raise FileNotFoundError(msg)
         return cls.model_validate_json(path.read_text())
 
     @classmethod

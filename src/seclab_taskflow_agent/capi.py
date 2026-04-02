@@ -38,7 +38,8 @@ class AI_API_ENDPOINT_ENUM(StrEnum):
             case AI_API_ENDPOINT_ENUM.AI_API_OPENAI:
                 return f"https://{self}/v1"
             case _:
-                raise ValueError(f"Unsupported endpoint: {self}")
+                msg = f"Unsupported endpoint: {self}"
+                raise ValueError(msg)
 
 
 COPILOT_INTEGRATION_ID = "vscode-chat"

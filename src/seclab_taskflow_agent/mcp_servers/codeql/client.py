@@ -467,7 +467,8 @@ def _file_uri_to_path(uri):
     # note: don't try to parse paths like "file://a/b" because that returns "/b", should be "file:///a/b"
     parsed = urlparse(uri)
     if parsed.scheme != "file":
-        raise ValueError(f"Not a file:// uri: {uri}")
+        msg = f"Not a file:// uri: {uri}"
+        raise ValueError(msg)
     path = unquote(parsed.path)
     region = None
     if ":" in path:
@@ -605,7 +606,8 @@ def run_query(
     if target:
         target_pos = get_query_position(query_path, target)
         if not target_pos:
-            raise ValueError(f"Could not resolve quick eval target for {target}")
+            msg = f"Could not resolve quick eval target for {target}"
+            raise ValueError(msg)
     try:
         with (
             QueryServer(database, keep_alive=keep_alive, log_stderr=log_stderr) as server,
@@ -635,5 +637,6 @@ def run_query(
                 case _:
                     raise ValueError("Unsupported output format {fmt}")
     except Exception as e:
-        raise RuntimeError(f"Error in run_query: {e}") from e
+        msg = f"Error in run_query: {e}"
+        raise RuntimeError(msg) from e
     return result
