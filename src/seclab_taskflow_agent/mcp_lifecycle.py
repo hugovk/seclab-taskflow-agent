@@ -116,7 +116,8 @@ def build_mcp_servers(
                     client_session_timeout_seconds=client_session_timeout,
                 )
             case _:
-                raise ValueError(f"Unsupported MCP transport: {params['kind']}")
+                msg = f"Unsupported MCP transport: {params['kind']}"
+                raise ValueError(msg)
 
         entries.append(MCPServerEntry(MCPNamespaceWrap(confirms, mcp_server), server_proc, name=tb))
 

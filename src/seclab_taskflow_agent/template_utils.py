@@ -77,7 +77,8 @@ def env_function(var_name: str, default: Optional[str] = None, required: bool = 
     """
     value = os.getenv(var_name, default)
     if value is None and required:
-        raise LookupError(f"Required environment variable {var_name} not found!")
+        msg = f"Required environment variable {var_name} not found!"
+        raise LookupError(msg)
     return value or ""
 
 

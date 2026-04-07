@@ -78,9 +78,8 @@ def _resolve_model_config(
     models_params: dict[str, dict[str, Any]] = m_config.model_settings or {}
     unknown = set(models_params) - set(model_keys)
     if unknown:
-        raise ValueError(
-            f"Settings section of model_config file {model_config_ref} contains models not in the model section: {unknown}"
-        )
+        msg = f"Settings section of model_config file {model_config_ref} contains models not in the model section: {unknown}"
+        raise ValueError(msg)
     return model_keys, model_dict, models_params, m_config.api_type
 
 
@@ -103,7 +102,8 @@ def _merge_reusable_task(
     """
     reusable_doc = available_tools.get_taskflow(task.uses)
     if reusable_doc is None:
-        raise ValueError(f"No such reusable taskflow: {task.uses}")
+        msg = f"No such reusable taskflow: {task.uses}"
+        raise ValueError(msg)
     if len(reusable_doc.taskflow) > 1:
         raise ValueError("Reusable taskflows can only contain 1 task")
     parent_task = reusable_doc.taskflow[0].task
@@ -147,7 +147,8 @@ def _resolve_task_model(
 
     task_model_settings: dict[str, Any] | Any = task.model_settings or {}
     if not isinstance(task_model_settings, dict):
-        raise ValueError(f"model_settings in task {task.name or ''} needs to be a dictionary")
+        msg = f"model_settings in task {task.name or ''} needs to be a dictionary"
+        raise ValueError(msg)
 
     # Task-level overrides can also set engine keys
     task_settings = dict(task_model_settings)
@@ -228,7 +229,8 @@ async def _build_prompts_to_run(
                     prompts_to_run.append(rendered_prompt)
                 except jinja2.TemplateError as e:
                     logging.error(f"Error rendering template for result {value}: {e}")
-                    raise ValueError(f"Template rendering failed: {e}")
+                    msg = f"Template rendering failed: {e}"
+                    raise ValueError(msg)
 
         # Consume only after all prompts rendered successfully so that
         # the result remains available for retry/resume on failure.
@@ -577,7 +579,8 @@ async def run_main(
                     )
                 except jinja2.TemplateError as e:
                     logging.error(f"Template rendering error: {e}")
-                    raise ValueError(f"Failed to render prompt template: {e}") from e
+                    msg = f"Failed to render prompt template: {e}"
+                    raise ValueError(msg) from e
 
             with TmpEnv(env):
                 prompts_to_run: list[str] = await _build_prompts_to_run(
@@ -611,7 +614,8 @@ async def run_main(
                         for agent_name in current_agents:
                             personality = available_tools.get_personality(agent_name)
                             if personality is None:
-                                raise ValueError(f"No such personality: {agent_name}")
+                                msg = f"No such personality: {agent_name}"
+                                raise ValueError(msg)
                             resolved_agents[agent_name] = personality
 
                         if not resolved_agents:

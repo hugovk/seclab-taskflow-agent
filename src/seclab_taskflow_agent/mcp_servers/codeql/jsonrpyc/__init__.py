@@ -86,7 +86,8 @@ class Spec:
         :raises TypeError: When *id* is invalid.
         """
         if (id is not None or not allow_empty) and not isinstance(id, (int, str)):
-            raise TypeError(f"id must be an integer or string, got {id} ({type(id)})")
+            msg = f"id must be an integer or string, got {id} ({type(id)})"
+            raise TypeError(msg)
 
     @classmethod
     def check_method(cls, method: str, /) -> None:
@@ -98,7 +99,8 @@ class Spec:
         :raises TypeError: When *method* is invalid.
         """
         if not isinstance(method, str):
-            raise TypeError(f"method must be a string, got {method} ({type(method)})")
+            msg = f"method must be a string, got {method} ({type(method)})"
+            raise TypeError(msg)
 
     @classmethod
     def check_code(cls, code: int, /) -> None:
@@ -113,7 +115,8 @@ class Spec:
         try:
             get_error(code)
         except Exception:
-            raise TypeError(f"invalid error code, got {code} ({type(code)})")
+            msg = f"invalid error code, got {code} ({type(code)})"
+            raise TypeError(msg)
 
     @classmethod
     def request(
@@ -502,7 +505,8 @@ class RPC:
         try:
             method = req["method"]
             if method not in self.method_handlers:
-                raise ValueError(f"No handler defined for method: {method}")
+                msg = f"No handler defined for method: {method}"
+                raise ValueError(msg)
             result = self.method_handlers[method](req["params"])
             if "id" in req:
                 res = Spec.response(req["id"], result)
@@ -752,7 +756,8 @@ class Watchdog(threading.Thread):
                         print(f"Incoming jsonrpc message: {decoded_msg}")
                     self.rpc._handle(decoded_msg)
                 else:
-                    raise ValueError(f"Don't know how to handle: {decoded_line}")
+                    msg = f"Don't know how to handle: {decoded_line}"
+                    raise ValueError(msg)
             else:
                 self._stopper.wait(self.interval)
 
@@ -836,13 +841,16 @@ def register_error(cls: type[RPCError]) -> type[RPCError]:
             title = "My custom error"
     """
     if not issubclass(cls, RPCError):
-        raise TypeError(f"'{cls}' is not a subclass of RPCError")
+        msg = f"'{cls}' is not a subclass of RPCError"
+        raise TypeError(msg)
 
     # check duplicates
     if cls.code in error_map_code:
-        raise AttributeError(f"duplicate RPC error code {cls.code}")
+        msg = f"duplicate RPC error code {cls.code}"
+        raise AttributeError(msg)
     if cls.code_range in error_map_code_range:
-        raise AttributeError(f"duplicate RPC error code range {cls.code_range}")
+        msg = f"duplicate RPC error code range {cls.code_range}"
+        raise AttributeError(msg)
 
     # register
     error_map_code[cls.code] = cls
@@ -867,7 +875,8 @@ def get_error(code: int) -> type[RPCError]:
         if lower <= code <= upper:
             return cls
 
-    raise ValueError(f"unknown error code '{code}' ({type(code)})")
+    msg = f"unknown error code '{code}' ({type(code)})"
+    raise ValueError(msg)
 
 
 @register_error
