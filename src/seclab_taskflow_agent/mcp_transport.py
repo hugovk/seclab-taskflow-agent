@@ -109,7 +109,8 @@ class StreamableMCPThread(Thread):
         host = parsed.hostname
         port = parsed.port
         if host is None or port is None:
-            raise ValueError(f"URL must include a host and port: {self.url}")
+            msg = f"URL must include a host and port: {self.url}"
+            raise ValueError(msg)
         deadline = asyncio.get_event_loop().time() + timeout
         while True:
             try:
@@ -119,7 +120,8 @@ class StreamableMCPThread(Thread):
                 return
             except (OSError, ConnectionRefusedError):
                 if asyncio.get_event_loop().time() > deadline:
-                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds")
+                    msg = f"Could not connect to {host}:{port} after {timeout} seconds"
+                    raise TimeoutError(msg)
                 await asyncio.sleep(poll_interval)
 
     def wait_for_connection(
@@ -139,7 +141,8 @@ class StreamableMCPThread(Thread):
         host = parsed.hostname
         port = parsed.port
         if host is None or port is None:
-            raise ValueError(f"URL must include a host and port: {self.url}")
+            msg = f"URL must include a host and port: {self.url}"
+            raise ValueError(msg)
         deadline = time.time() + timeout
         while True:
             try:
@@ -147,7 +150,8 @@ class StreamableMCPThread(Thread):
                     return
             except OSError:
                 if time.time() > deadline:
-                    raise TimeoutError(f"Could not connect to {host}:{port} after {timeout} seconds")
+                    msg = f"Could not connect to {host}:{port} after {timeout} seconds"
+                    raise TimeoutError(msg)
                 time.sleep(poll_interval)
 
     def run(self) -> None:
@@ -216,7 +220,8 @@ class StreamableMCPThread(Thread):
         """
         self.join(timeout)
         if self.is_alive():
-            raise RuntimeError("Process thread did not exit within timeout.")
+            msg = "Process thread did not exit within timeout."
+            raise RuntimeError(msg)
         if self.exception is not None:
             raise self.exception
 

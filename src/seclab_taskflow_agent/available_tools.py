@@ -108,18 +108,15 @@ class AvailableTools:
         # Resolve package and filename from dotted path
         components = toolname.rsplit(".", 1)
         if len(components) != 2:
-            raise BadToolNameError(
-                f'Not a valid toolname: "{toolname}". '
-                f'Expected format: "packagename.filename"'
-            )
+            msg = f'Not a valid toolname: "{toolname}". Expected format: "packagename.filename"'
+            raise BadToolNameError(msg)
         package, filename = components
 
         try:
             pkg_dir = importlib.resources.files(package)
             if not pkg_dir.is_dir():
-                raise BadToolNameError(
-                    f"Cannot load {toolname} because {pkg_dir} is not a valid directory."
-                )
+                msg = f"Cannot load {toolname} because {pkg_dir} is not a valid directory."
+                raise BadToolNameError(msg)
             filepath = pkg_dir.joinpath(filename + ".yaml")
             with filepath.open() as fh:
                 raw = yaml.safe_load(fh)
@@ -128,17 +125,14 @@ class AvailableTools:
             header = raw.get("seclab-taskflow-agent", {})
             filetype = header.get("filetype", "")
             if filetype != tooltype.value:
-                raise FileTypeException(
-                    f"Error in {filepath}: expected filetype {tooltype.value!r}, "
-                    f"got {filetype!r}."
-                )
+                msg = f"Error in {filepath}: expected filetype {tooltype.value!r}, got {filetype!r}."
+                raise FileTypeException(msg)
 
             # Parse into the appropriate Pydantic model
             model_cls = DOCUMENT_MODELS.get(filetype)
             if model_cls is None:
-                raise BadToolNameError(
-                    f"Unknown filetype {filetype!r} in {toolname}"
-                )
+                msg = f"Unknown filetype {filetype!r} in {toolname}"
+                raise BadToolNameError(msg)
 
             try:
                 doc = model_cls(**raw)
@@ -147,21 +141,19 @@ class AvailableTools:
                 for err in exc.errors():
                     if "Unsupported version" in str(err.get("msg", "")):
                         raise VersionException(str(err["msg"])) from exc
-                raise BadToolNameError(
-                    f"Validation error loading {toolname}: {exc}"
-                ) from exc
-
-            # Cache and return
+                msg = f"Validation error loading {toolname}: {exc}"
+                raise BadToolNameError(msg) from exc
             if tooltype not in self._cache:
                 self._cache[tooltype] = {}
             self._cache[tooltype][toolname] = doc
             return doc
 
         except ModuleNotFoundError as exc:
-            raise BadToolNameError(f"Cannot load {toolname}: {exc}") from exc
+            msg = f"Cannot load {toolname}: {exc}"
+            raise BadToolNameError(msg) from exc
         except FileNotFoundError:
-            raise BadToolNameError(
-                f"Cannot load {toolname} because {filepath} is not a valid file."
-            )
+            msg = f"Cannot load {toolname} because {filepath} is not a valid file."
+            raise BadToolNameError(msg)
         except ValueError as exc:
-            raise BadToolNameError(f"Cannot load {toolname}: {exc}") from exc
+            msg = f"Cannot load {toolname}: {exc}"
+            raise BadToolNameError(msg) from exc

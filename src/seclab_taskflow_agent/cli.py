@@ -36,7 +36,8 @@ app = typer.Typer(
 def _parse_global(value: str) -> tuple[str, str]:
     """Parse a ``KEY=VALUE`` string into a (key, value) pair."""
     if "=" not in value:
-        raise typer.BadParameter(f"Invalid global variable format: {value!r}. Expected KEY=VALUE.")
+        msg = f"Invalid global variable format: {value!r}. Expected KEY=VALUE."
+        raise typer.BadParameter(msg)
     key, _, val = value.partition("=")
     return key.strip(), val.strip()
 

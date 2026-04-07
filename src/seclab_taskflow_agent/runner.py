@@ -78,9 +78,8 @@ def _resolve_model_config(
     models_params: dict[str, dict[str, Any]] = m_config.model_settings or {}
     unknown = set(models_params) - set(model_keys)
     if unknown:
-        raise ValueError(
-            f"Settings section of model_config file {model_config_ref} contains models not in the model section: {unknown}"
-        )
+        msg = f"Settings section of model_config file {model_config_ref} contains models not in the model section: {unknown}"
+        raise ValueError(msg)
     return model_keys, model_dict, models_params, m_config.api_type
 
 
@@ -103,9 +102,11 @@ def _merge_reusable_task(
     """
     reusable_doc = available_tools.get_taskflow(task.uses)
     if reusable_doc is None:
-        raise ValueError(f"No such reusable taskflow: {task.uses}")
+        msg = f"No such reusable taskflow: {task.uses}"
+        raise ValueError(msg)
     if len(reusable_doc.taskflow) > 1:
-        raise ValueError("Reusable taskflows can only contain 1 task")
+        msg = "Reusable taskflows can only contain 1 task"
+        raise ValueError(msg)
     parent_task = reusable_doc.taskflow[0].task
     merged: dict[str, Any] = parent_task.model_dump(by_alias=True, exclude_defaults=True)
     current: dict[str, Any] = task.model_dump(by_alias=True, exclude_defaults=True)
@@ -147,7 +148,8 @@ def _resolve_task_model(
 
     task_model_settings: dict[str, Any] | Any = task.model_settings or {}
     if not isinstance(task_model_settings, dict):
-        raise ValueError(f"model_settings in task {task.name or ''} needs to be a dictionary")
+        msg = f"model_settings in task {task.name or ''} needs to be a dictionary"
+        raise ValueError(msg)
 
     # Task-level overrides can also set engine keys
     task_settings = dict(task_model_settings)
@@ -198,14 +200,16 @@ async def _build_prompts_to_run(
             raise
         except json.JSONDecodeError as exc:
             logging.critical(f"Could not parse tool result as JSON: {last_mcp_tool_results[-1][:200]}")
-            raise ValueError("Tool result is not valid JSON") from exc
+            msg = "Tool result is not valid JSON"
+            raise ValueError(msg) from exc
 
         text = last_result.get("text", "")
         try:
             iterable_result = json.loads(text)
         except json.JSONDecodeError as exc:
             logging.critical(f"Could not parse result text: {text}")
-            raise ValueError("Result text is not valid JSON") from exc
+            msg = "Result text is not valid JSON"
+            raise ValueError(msg) from exc
         try:
             iter(iterable_result)
         except TypeError:
@@ -228,7 +232,8 @@ async def _build_prompts_to_run(
                     prompts_to_run.append(rendered_prompt)
                 except jinja2.TemplateError as e:
                     logging.error(f"Error rendering template for result {value}: {e}")
-                    raise ValueError(f"Template rendering failed: {e}")
+                    msg = f"Template rendering failed: {e}"
+                    raise ValueError(msg)
 
         # Consume only after all prompts rendered successfully so that
         # the result remains available for retry/resume on failure.
@@ -403,7 +408,8 @@ async def deploy_task_agents(
                         max_retry -= 1
                     except RateLimitError:
                         if rate_limit_backoff == MAX_RATE_LIMIT_BACKOFF:
-                            raise APITimeoutError("Max rate limit backoff reached")
+                            msg = "Max rate limit backoff reached"
+                            raise APITimeoutError(msg)
                         if rate_limit_backoff > MAX_RATE_LIMIT_BACKOFF:
                             rate_limit_backoff = MAX_RATE_LIMIT_BACKOFF
                         else:
@@ -556,7 +562,8 @@ async def run_main(
             inputs = task.inputs or {}
             task_prompt = task.user_prompt or ""
             if run and task_prompt:
-                raise ValueError("shell task and prompt task are mutually exclusive!")
+                msg = "shell task and prompt task are mutually exclusive!"
+                raise ValueError(msg)
             must_complete = task.must_complete
             max_turns = task.max_steps or DEFAULT_MAX_TURNS
             toolboxes_override = task.toolboxes or []
@@ -577,7 +584,8 @@ async def run_main(
                     )
                 except jinja2.TemplateError as e:
                     logging.error(f"Template rendering error: {e}")
-                    raise ValueError(f"Failed to render prompt template: {e}") from e
+                    msg = f"Failed to render prompt template: {e}"
+                    raise ValueError(msg) from e
 
             with TmpEnv(env):
                 prompts_to_run: list[str] = await _build_prompts_to_run(
@@ -611,14 +619,16 @@ async def run_main(
                         for agent_name in current_agents:
                             personality = available_tools.get_personality(agent_name)
                             if personality is None:
-                                raise ValueError(f"No such personality: {agent_name}")
+                                msg = f"No such personality: {agent_name}"
+                                raise ValueError(msg)
                             resolved_agents[agent_name] = personality
 
                         if not resolved_agents:
-                            raise ValueError(
+                            msg = (
                                 "No agents resolved for this task. "
                                 "Specify a personality with -p or provide an agents list."
                             )
+                            raise ValueError(msg)
 
                         async def _deploy(ra: dict, pp: str) -> bool:
                             async with semaphore:

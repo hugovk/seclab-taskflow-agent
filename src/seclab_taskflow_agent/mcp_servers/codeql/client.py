@@ -194,10 +194,12 @@ class CodeQL:
         template_values: dict | None = None,
     ):
         if not self.active_database:
-            raise RuntimeError("No Active Database")
+            msg = "No Active Database"
+            raise RuntimeError(msg)
 
         if not self.active_connection:
-            raise RuntimeError("No Active Connection")
+            msg = "No Active Connection"
+            raise RuntimeError(msg)
 
         if isinstance(quick_eval_pos, dict):
             # A quick eval position contains:
@@ -302,7 +304,8 @@ class CodeQL:
     def _resolve_query_server(self):
         help_msg = shell_command_to_string(self.codeql_cli + ["excute", "--help"])
         if not re.search("query-server2", help_msg):
-            raise RuntimeError("Legacy server not supported!")
+            msg = "Legacy server not supported!"
+            raise RuntimeError(msg)
         return "query-server2"
 
     def _resolve_library_paths(self, query_path):
@@ -463,11 +466,13 @@ def _file_uri_to_path(uri):
     # internally the codeql client will resolve both relative and full paths
     # regardless of root directory differences
     if not uri.startswith("file:///"):
-        raise ValueError("URI path should be formatted as absolute")
+        msg = "URI path should be formatted as absolute"
+        raise ValueError(msg)
     # note: don't try to parse paths like "file://a/b" because that returns "/b", should be "file:///a/b"
     parsed = urlparse(uri)
     if parsed.scheme != "file":
-        raise ValueError(f"Not a file:// uri: {uri}")
+        msg = f"Not a file:// uri: {uri}"
+        raise ValueError(msg)
     path = unquote(parsed.path)
     region = None
     if ":" in path:
@@ -605,7 +610,8 @@ def run_query(
     if target:
         target_pos = get_query_position(query_path, target)
         if not target_pos:
-            raise ValueError(f"Could not resolve quick eval target for {target}")
+            msg = f"Could not resolve quick eval target for {target}"
+            raise ValueError(msg)
     try:
         with (
             QueryServer(database, keep_alive=keep_alive, log_stderr=log_stderr) as server,
@@ -633,7 +639,9 @@ def run_query(
                 case "sarif":
                     result = server._bqrs_to_sarif(bqrs_path, server._query_info(query_path))
                 case _:
-                    raise ValueError("Unsupported output format {fmt}")
+                    msg = f"Unsupported output format {fmt}"
+                    raise ValueError(msg)
     except Exception as e:
-        raise RuntimeError(f"Error in run_query: {e}") from e
+        msg = f"Error in run_query: {e}"
+        raise RuntimeError(msg) from e
     return result

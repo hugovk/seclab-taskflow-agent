@@ -23,7 +23,8 @@ def shell_command_to_string(cmd: list[str]) -> str:
     stdout, stderr = p.communicate()
     p.wait()
     if p.returncode:
-        raise RuntimeError(f"Command {cmd} failed: {stderr}")
+        msg = f"Command {cmd} failed: {stderr}"
+        raise RuntimeError(msg)
     return stdout
 
 
