@@ -1,10 +1,13 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
+import logging
 import os
 import shutil
 import subprocess
 import sys
+
+logger = logging.getLogger(__name__)
 
 
 def read_file_list(list_path):
@@ -29,7 +32,7 @@ def copy_files(file_list, dest_dir):
         abs_dest = os.path.abspath(os.path.join(dest_dir, rel_path))
         os.makedirs(os.path.dirname(abs_dest), exist_ok=True)
         shutil.copy2(abs_src, abs_dest)
-        sys.stdout.write(f"Copied {abs_src} -> {abs_dest}\n")
+        logger.info(f"Copied {abs_src} -> {abs_dest}")
 
 
 def ensure_git_repo(dest_dir):
@@ -41,9 +44,9 @@ def ensure_git_repo(dest_dir):
     if not os.path.isdir(git_dir):
         try:
             subprocess.run(["git", "init", "-b", "main"], cwd=dest_dir, check=True)
-            sys.stdout.write(f"Initialized new git repository in {dest_dir} with 'main' as the default branch\n")
+            logger.info(f"Initialized new git repository in {dest_dir} with 'main' as the default branch")
         except subprocess.CalledProcessError as e:
-            sys.stderr.write(f"Failed to initialize git repository in {dest_dir}: {e}\n")
+            logger.error(f"Failed to initialize git repository in {dest_dir}: {e}")
             sys.exit(1)
     else:
         # Ensure main branch exists and is checked out
@@ -51,12 +54,12 @@ def ensure_git_repo(dest_dir):
             branches = subprocess.check_output(["git", "branch"], cwd=dest_dir, text=True)
             if "main" not in branches:
                 subprocess.run(["git", "checkout", "-b", "main"], cwd=dest_dir, check=True)
-                sys.stdout.write("Created and switched to 'main' branch.\n")
+                logger.info("Created and switched to 'main' branch.")
             else:
                 subprocess.run(["git", "checkout", "main"], cwd=dest_dir, check=True)
-                sys.stdout.write("Switched to 'main' branch.\n")
+                logger.info("Switched to 'main' branch.")
         except subprocess.CalledProcessError as e:
-            sys.stderr.write(f"Failed to ensure 'main' branch in {dest_dir}: {e}\n")
+            logger.error(f"Failed to ensure 'main' branch in {dest_dir}: {e}")
             sys.exit(1)
 
 
@@ -70,16 +73,16 @@ def git_add_files(file_list, dest_dir):
         for rel_path in file_list:
             try:
                 subprocess.run(["git", "add", "-f", rel_path], check=True)
-                sys.stdout.write(f"git add {rel_path}\n")
+                logger.info(f"git add {rel_path}")
             except subprocess.CalledProcessError as e:
-                sys.stderr.write(f"Failed to git add {rel_path}: {e}\n")
+                logger.error(f"Failed to git add {rel_path}: {e}")
     finally:
         os.chdir(cwd)
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        sys.stderr.write("Usage: python copy_files.py <file_list.txt> <dest_dir>\n")
+        logger.error("Usage: python copy_files.py <file_list.txt> <dest_dir>")
         sys.exit(1)
     file_list_path = sys.argv[1]
     dest_dir = sys.argv[2]

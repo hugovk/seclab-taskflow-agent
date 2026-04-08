@@ -1,8 +1,11 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
+import logging
 import subprocess
 import sys
+
+logger = logging.getLogger(__name__)
 
 
 def get_image_digest(image_name, tag):
@@ -25,17 +28,19 @@ def build_and_push_image(dest_dir, image_name, tag):
     )
     # Push
     subprocess.run(["docker", "push", f"{image_name}:{tag}"], check=True)
-    sys.stdout.write(f"Pushed {image_name}:{tag}\n")
+    logger.info(f"Pushed {image_name}:{tag}")
     digest = get_image_digest(image_name, tag)
-    sys.stdout.write(f"Image digest: {digest}\n")
+    if digest is None:
+        raise RuntimeError(f"Failed to determine image digest for {image_name}:{tag}")
+    logger.info(f"Image digest: {digest}")
     with open("/tmp/digest.txt", "w") as f:
         f.write(digest)
 
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        sys.stderr.write("Usage: python build_and_publish_docker.py <ghcr_username/repo> <tag>\n")
-        sys.stderr.write("Example: python build_and_publish_docker.py ghcr.io/anticomputer/my-python-app latest\n")
+        logger.error("Usage: python build_and_publish_docker.py <ghcr_username/repo> <tag>")
+        logger.error("Example: python build_and_publish_docker.py ghcr.io/anticomputer/my-python-app latest")
         sys.exit(1)
 
     image_name = sys.argv[1]

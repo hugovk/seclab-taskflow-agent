@@ -12,10 +12,12 @@ Usage:
 """
 
 import re
-import sys
 import argparse
+import logging
 from pathlib import Path
 from typing import List, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 class TemplateMigrator:
@@ -91,7 +93,7 @@ class TemplateMigrator:
             True if file was modified, False otherwise
         """
         if file_path.suffix != '.yaml':
-            sys.stdout.write(f"Skipping non-YAML file: {file_path}\n")
+            logger.info(f"Skipping non-YAML file: {file_path}")
             return False
 
         try:
@@ -101,13 +103,13 @@ class TemplateMigrator:
             migrated_content = self.migrate_content(original_content)
 
             if migrated_content == original_content:
-                sys.stdout.write(f"No changes needed: {file_path}\n")
+                logger.info(f"No changes needed: {file_path}")
                 return False
 
             if self.dry_run:
-                sys.stdout.write(f"\n{'='*60}\n")
-                sys.stdout.write(f"Would modify: {file_path}\n")
-                sys.stdout.write(f"{'='*60}\n")
+                logger.info(f"\n{'='*60}")
+                logger.info(f"Would modify: {file_path}")
+                logger.info(f"{'='*60}")
                 self._show_diff(original_content, migrated_content)
                 return True
 
@@ -115,11 +117,11 @@ class TemplateMigrator:
             with open(file_path, 'w') as f:
                 f.write(migrated_content)
 
-            sys.stdout.write(f"Migrated: {file_path}\n")
+            logger.info(f"Migrated: {file_path}")
             return True
 
         except Exception as e:
-            sys.stderr.write(f"Error migrating {file_path}: {e}\n")
+            logger.error(f"Error migrating {file_path}: {e}")
             return False
 
     def _show_diff(self, original: str, migrated: str):
@@ -129,9 +131,9 @@ class TemplateMigrator:
 
         for i, (orig, mig) in enumerate(zip(orig_lines, mig_lines, strict=False), 1):
             if orig != mig:
-                sys.stdout.write(f"Line {i}:\n")
-                sys.stdout.write(f"  - {orig}\n")
-                sys.stdout.write(f"  + {mig}\n")
+                logger.info(f"Line {i}:")
+                logger.info(f"  - {orig}")
+                logger.info(f"  + {mig}")
 
     def migrate_directory(self, directory: Path, recursive: bool = True) -> int:
         """Migrate all YAML files in directory.
@@ -143,10 +145,10 @@ class TemplateMigrator:
         yaml_files = list(directory.glob(pattern))
 
         if not yaml_files:
-            sys.stdout.write(f"No YAML files found in {directory}\n")
+            logger.info(f"No YAML files found in {directory}")
             return 0
 
-        sys.stdout.write(f"Found {len(yaml_files)} YAML files\n")
+        logger.info(f"Found {len(yaml_files)} YAML files")
 
         modified_count = 0
         for yaml_file in yaml_files:
@@ -184,7 +186,7 @@ def main():
     total_modified = 0
     for path in args.paths:
         if not path.exists():
-            sys.stderr.write(f"Path not found: {path}\n")
+            logger.error(f"Path not found: {path}")
             continue
 
         if path.is_file():
@@ -197,14 +199,14 @@ def main():
             )
             total_modified += modified
         else:
-            sys.stderr.write(f"Invalid path: {path}\n")
+            logger.error(f"Invalid path: {path}")
 
-    sys.stdout.write(f"\n{'='*60}\n")
+    logger.info(f"\n{'='*60}")
     if args.dry_run:
-        sys.stdout.write(f"Dry run complete. {total_modified} files would be modified.\n")
+        logger.info(f"Dry run complete. {total_modified} files would be modified.")
     else:
-        sys.stdout.write(f"Migration complete. {total_modified} files modified.\n")
-    sys.stdout.write(f"{'='*60}\n")
+        logger.info(f"Migration complete. {total_modified} files modified.")
+    logger.info(f"{'='*60}")
 
 
 if __name__ == '__main__':
