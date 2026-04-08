@@ -38,6 +38,7 @@ def build_and_push_image(dest_dir, image_name, tag):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     if len(sys.argv) != 3:
         logger.error("Usage: python build_and_publish_docker.py <ghcr_username/repo> <tag>")
         logger.error("Example: python build_and_publish_docker.py ghcr.io/anticomputer/my-python-app latest")

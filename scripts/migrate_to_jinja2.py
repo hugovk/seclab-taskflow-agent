@@ -107,7 +107,7 @@ class TemplateMigrator:
                 return False
 
             if self.dry_run:
-                logger.info(f"\n{'='*60}")
+                logger.info(f"{'='*60}")
                 logger.info(f"Would modify: {file_path}")
                 logger.info(f"{'='*60}")
                 self._show_diff(original_content, migrated_content)
@@ -159,6 +159,7 @@ class TemplateMigrator:
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     parser = argparse.ArgumentParser(
         description='Migrate taskflow YAML files to Jinja2 syntax'
     )
@@ -201,7 +202,7 @@ def main():
         else:
             logger.error(f"Invalid path: {path}")
 
-    logger.info(f"\n{'='*60}")
+    logger.info(f"{'='*60}")
     if args.dry_run:
         logger.info(f"Dry run complete. {total_modified} files would be modified.")
     else:

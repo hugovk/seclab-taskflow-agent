@@ -81,6 +81,7 @@ def git_add_files(file_list, dest_dir):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     if len(sys.argv) != 3:
         logger.error("Usage: python copy_files.py <file_list.txt> <dest_dir>")
         sys.exit(1)
