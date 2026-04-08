@@ -163,6 +163,7 @@ exclude_lines = [
 [tool.ruff]
 # Set target version to 3.10 to support match statements
 target-version = "py310"
+exclude = ["src/seclab_taskflow_agent/mcp_servers/codeql/jsonrpyc/"]
 
 [tool.ruff.lint]
 # Baseline suppressions carried from the original codebase.
