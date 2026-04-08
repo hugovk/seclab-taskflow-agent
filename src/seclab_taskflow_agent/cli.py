@@ -87,6 +87,7 @@ def main(
         str | None,
         typer.Option("-t", "--taskflow", help="Taskflow module path (mutually exclusive with -p)."),
     ] = None,
+    *,
     list_models: Annotated[
         bool,
         typer.Option("-l", "--list-models", help="List available tool-call models and exit."),

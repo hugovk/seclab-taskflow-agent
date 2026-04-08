@@ -44,6 +44,7 @@ class CodeQL:
         self,
         codeql_cli=os.getenv("CODEQL_CLI", default="codeql"),
         server_options=["--threads=0", "--quiet"],
+        *,
         log_stderr=False,
     ):
         self.server_options = server_options.copy()
@@ -406,7 +407,7 @@ class CodeQL:
 
 
 class QueryServer(CodeQL):
-    def __init__(self, database: Path, keep_alive=False, log_stderr=False):
+    def __init__(self, database: Path, *, keep_alive=False, log_stderr=False):
         super().__init__(log_stderr=log_stderr)
         self.database = database
         self.keep_alive = keep_alive
@@ -476,7 +477,7 @@ def _file_uri_to_path(uri):
     return path, region
 
 
-def _get_source_prefix(database_path: Path, strip_leading_slash=True) -> str:
+def _get_source_prefix(database_path: Path, *, strip_leading_slash=True) -> str:
     # grab the source prefix from codeql-database.yml
     db_yml_path = Path(database_path) / Path("codeql-database.yml")
     with open(db_yml_path) as stream:
@@ -491,7 +492,7 @@ def _get_source_prefix(database_path: Path, strip_leading_slash=True) -> str:
             raise
 
 
-def list_src_files(database_path: str | Path, as_uri=False, strip_prefix=True):
+def list_src_files(database_path: str | Path, *, as_uri=False, strip_prefix=True):
     src_path = Path(database_path) / Path("src.zip")
     files = shell_command_to_string(["zipinfo", "-1", src_path]).split("\n")
     source_prefix = _get_source_prefix(Path(database_path))
@@ -503,7 +504,7 @@ def list_src_files(database_path: str | Path, as_uri=False, strip_prefix=True):
     return files
 
 
-def search_in_src_archive(database_path: str, search_term: str, as_uri=False, strip_prefix=True):
+def search_in_src_archive(database_path: str, search_term: str, *, as_uri=False, strip_prefix=True):
     database_path = Path(database_path)
     src_path = database_path / Path("src.zip")
     results = {}
@@ -595,6 +596,7 @@ def run_query(
     target="",
     progress_callback=None,
     template_values=None,
+    *,
     # keep the query server alive if desired
     keep_alive=True,
     log_stderr=False,
