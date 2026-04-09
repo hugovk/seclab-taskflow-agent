@@ -24,6 +24,7 @@ from agents.agent import FunctionToolResult, ModelSettings, ToolsToFinalOutputRe
 from agents.run import DEFAULT_MAX_TURNS
 from dotenv import find_dotenv, load_dotenv
 from openai import AsyncOpenAI
+import httpx
 
 from .capi import get_AI_endpoint, get_AI_token, get_provider
 
@@ -182,6 +183,7 @@ class TaskAgent:
             base_url=resolved_endpoint,
             api_key=resolved_token,
             default_headers=provider.extra_headers or None,
+            timeout=httpx.Timeout(connect=10.0, read=300.0, write=300.0, pool=60.0),
         )
         set_tracing_disabled(True)
         self.run_hooks = run_hooks or TaskRunHooks()

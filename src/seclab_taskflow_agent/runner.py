@@ -51,6 +51,7 @@ MAX_RATE_LIMIT_BACKOFF = 120  # Maximum backoff cap in seconds for rate-limit re
 MAX_API_RETRY = 5  # Maximum number of consecutive API error retries
 TASK_RETRY_LIMIT = 3  # Maximum retry attempts for a failed task
 TASK_RETRY_BACKOFF = 10  # Initial backoff in seconds between task retries
+STREAM_IDLE_TIMEOUT = 1800  # Kill a streaming run if no events received for this long (seconds)
 
 
 def _resolve_model_config(
@@ -391,7 +392,22 @@ async def deploy_task_agents(
                 while rate_limit_backoff:
                     try:
                         result = agent0.run_streamed(prompt, max_turns=max_turns)
-                        async for event in result.stream_events():
+                        stream = result.stream_events()
+                        async_iter = stream.__aiter__()
+                        while True:
+                            try:
+                                event = await asyncio.wait_for(
+                                    async_iter.__anext__(),
+                                    timeout=STREAM_IDLE_TIMEOUT,
+                                )
+                            except StopAsyncIteration:
+                                break
+                            except asyncio.TimeoutError:
+                                logging.error(
+                                    f"Stream idle for {STREAM_IDLE_TIMEOUT}s — "
+                                    "connection likely dead, raising APITimeoutError"
+                                )
+                                raise APITimeoutError("Stream idle timeout exceeded")
                             if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                                 await render_model_output(event.data.delta, async_task=async_task, task_id=task_id)
                         await render_model_output("\n\n", async_task=async_task, task_id=task_id)
