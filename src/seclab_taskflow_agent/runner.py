@@ -372,6 +372,7 @@ async def deploy_task_agents(
             server_prompts=server_prompts,
             important_guidelines=important_guidelines,
         )
+        agent0 = None
         agent0 = TaskAgent(
             name=primary_name,
             instructions=prompt_with_handoff_instructions(system_prompt) if handoffs else system_prompt,
@@ -460,6 +461,10 @@ async def deploy_task_agents(
         return complete
 
     finally:
+        # Close the AsyncOpenAI client to release httpx connection pool.
+        # Dead CLOSE_WAIT sockets in the pool cause kqueue CPU spin if left open.
+        if agent0 is not None:
+            await agent0.close()
         start_cleanup.set()
         cleanup_attempts_left = len(entries)
         while cleanup_attempts_left and entries:

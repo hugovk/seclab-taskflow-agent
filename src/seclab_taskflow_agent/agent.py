@@ -200,6 +200,7 @@ class TaskAgent:
         else:
             model_impl = OpenAIChatCompletionsModel(model=model, openai_client=client)
 
+        self._openai_client = client
         self.agent = Agent(
             name=name,
             instructions=instructions,
@@ -210,6 +211,11 @@ class TaskAgent:
             model_settings=model_settings or ModelSettings(),
             hooks=agent_hooks or TaskAgentHooks(),
         )
+
+    async def close(self) -> None:
+        """Close the underlying AsyncOpenAI client and its httpx connection pool."""
+        if self._openai_client is not None:
+            await self._openai_client.close()
 
     async def run(self, prompt: str, max_turns: int = DEFAULT_MAX_TURNS) -> result.RunResult:
         """Run the agent to completion and return the result."""
