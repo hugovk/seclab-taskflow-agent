@@ -771,3 +771,8 @@ async def run_main(
         if session is not None and not session.error:
             session.mark_finished()
             await render_model_output(f"** 🤖✅ Session {session.session_id} completed\n")
+
+    # Force-exit: asyncio.run() cleanup spins on dangling tasks/connections
+    # from the responses API path. Exit here before the event loop hangs.
+    import os
+    os._exit(0)
