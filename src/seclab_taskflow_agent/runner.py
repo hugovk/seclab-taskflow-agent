@@ -392,24 +392,31 @@ async def deploy_task_agents(
                 while rate_limit_backoff:
                     try:
                         result = agent0.run_streamed(prompt, max_turns=max_turns)
-                        stream = result.stream_events()
-                        async_iter = stream.__aiter__()
-                        while True:
-                            try:
-                                event = await asyncio.wait_for(
-                                    async_iter.__anext__(),
-                                    timeout=STREAM_IDLE_TIMEOUT,
-                                )
-                            except StopAsyncIteration:
-                                break
-                            except asyncio.TimeoutError:
-                                logging.error(
-                                    f"Stream idle for {STREAM_IDLE_TIMEOUT}s — "
-                                    "connection likely dead, raising APITimeoutError"
-                                )
-                                raise APITimeoutError("Stream idle timeout exceeded")
-                            if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-                                await render_model_output(event.data.delta, async_task=async_task, task_id=task_id)
+                        stream = None
+                        try:
+                            stream = result.stream_events()
+                            async_iter = stream.__aiter__()
+                            while True:
+                                try:
+                                    event = await asyncio.wait_for(
+                                        async_iter.__anext__(),
+                                        timeout=STREAM_IDLE_TIMEOUT,
+                                    )
+                                except StopAsyncIteration:
+                                    break
+                                except asyncio.TimeoutError:
+                                    logging.error(
+                                        f"Stream idle for {STREAM_IDLE_TIMEOUT}s — "
+                                        "connection likely dead, raising APITimeoutError"
+                                    )
+                                    raise APITimeoutError("Stream idle timeout exceeded")
+                                if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                                    await render_model_output(event.data.delta, async_task=async_task, task_id=task_id)
+                        finally:
+                            if stream is not None:
+                                aclose = getattr(stream, "aclose", None)
+                                if aclose is not None:
+                                    await aclose()
                         await render_model_output("\n\n", async_task=async_task, task_id=task_id)
                         return
                     except APITimeoutError:
