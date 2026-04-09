@@ -162,7 +162,6 @@ def main(
         )
         # Force-exit on success to prevent asyncio event loop spin on
         # dangling connections/tasks that survive cleanup.
-        import os
         os._exit(0)
     except KeyboardInterrupt:
         typer.echo("\nInterrupted.", err=True)
