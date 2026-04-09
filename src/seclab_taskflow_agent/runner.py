@@ -51,7 +51,11 @@ MAX_RATE_LIMIT_BACKOFF = 120  # Maximum backoff cap in seconds for rate-limit re
 MAX_API_RETRY = 5  # Maximum number of consecutive API error retries
 TASK_RETRY_LIMIT = 3  # Maximum retry attempts for a failed task
 TASK_RETRY_BACKOFF = 10  # Initial backoff in seconds between task retries
-STREAM_IDLE_TIMEOUT = 1800  # Kill a streaming run if no events received for this long (seconds)
+# Application-level backstop: kill a streaming run if no events yielded for 30 min.
+# Complements the TCP-level httpx.Timeout(read=300s) in agent.py which catches
+# dead sockets; this catches subtler hangs where the connection stays open but
+# the server (or async generator) stops producing events.
+STREAM_IDLE_TIMEOUT = 1800
 
 
 def _resolve_model_config(
