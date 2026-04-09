@@ -773,10 +773,8 @@ async def run_main(
             session.mark_finished()
             await render_model_output(f"** 🤖✅ Session {session.session_id} completed\n")
 
-    # Force-exit after successful completion only: asyncio.run() cleanup
-    # spins on dangling tasks/connections from the responses API path.
-    # Failure paths (must_complete break, personality mode) use normal exit.
-    if taskflow_path and session is not None and session.finished:
-        sys.stdout.flush()
-        sys.stderr.flush()
-        os._exit(0)
+    # Force-exit to prevent asyncio event loop spin on dangling
+    # tasks/connections from the responses API path. Flush first.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0 if (session is None or session.finished) else 1)
