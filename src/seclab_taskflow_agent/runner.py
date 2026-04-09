@@ -475,6 +475,14 @@ async def deploy_task_agents(
                 continue
             except Exception:
                 logging.exception("Exception in mcp server cleanup task")
+        # Cancel the MCP session task if it's still running to prevent
+        # the asyncio event loop from spinning on a dangling task.
+        if not mcp_sessions.done():
+            mcp_sessions.cancel()
+            try:
+                await mcp_sessions
+            except (asyncio.CancelledError, Exception):
+                pass
 
 
 async def run_main(
