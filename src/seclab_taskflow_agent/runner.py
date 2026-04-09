@@ -24,6 +24,8 @@ import json
 import logging
 import os
 import sys
+import threading
+import time
 import uuid
 from typing import Any
 
@@ -57,6 +59,44 @@ TASK_RETRY_BACKOFF = 10  # Initial backoff in seconds between task retries
 # dead sockets; this catches subtler hangs where the connection stays open but
 # the server (or async generator) stops producing events.
 STREAM_IDLE_TIMEOUT = 1800
+
+# Watchdog: a non-asyncio thread that force-kills the process if the event
+# loop stops making progress.  Covers every hang variant (dead connections,
+# asyncio cleanup spin, MCP cleanup, etc.) because it runs outside asyncio.
+WATCHDOG_IDLE_TIMEOUT = int(os.environ.get("WATCHDOG_IDLE_TIMEOUT", "1800"))  # 30 min default
+
+_watchdog_last_activity = time.monotonic()
+_watchdog_lock = threading.Lock()
+
+
+def watchdog_ping() -> None:
+    """Call from any coroutine/callback to signal the process is alive."""
+    global _watchdog_last_activity
+    with _watchdog_lock:
+        _watchdog_last_activity = time.monotonic()
+
+
+def _watchdog_thread(timeout: int) -> None:
+    """Background thread: force-exit if no activity for *timeout* seconds."""
+    check_interval = min(60, max(1, timeout // 5))
+    while True:
+        time.sleep(check_interval)
+        with _watchdog_lock:
+            idle = time.monotonic() - _watchdog_last_activity
+        if idle > timeout:
+            logging.error(
+                f"Watchdog: no activity for {idle:.0f}s (limit {timeout}s) — "
+                "force-exiting to prevent hang"
+            )
+            sys.stderr.flush()
+            sys.stdout.flush()
+            os._exit(2)
+
+
+def start_watchdog(timeout: int = WATCHDOG_IDLE_TIMEOUT) -> None:
+    """Start the watchdog thread (idempotent, daemon thread)."""
+    t = threading.Thread(target=_watchdog_thread, args=(timeout,), daemon=True)
+    t.start()
 
 
 def _resolve_model_config(
@@ -417,6 +457,7 @@ async def deploy_task_agents(
                                     )
                                     raise APITimeoutError("Stream idle timeout exceeded")
                                 if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                                    watchdog_ping()
                                     await render_model_output(event.data.delta, async_task=async_task, task_id=task_id)
                         finally:
                             if stream is not None:
@@ -464,6 +505,7 @@ async def deploy_task_agents(
     finally:
         # Close the AsyncOpenAI client to release httpx connection pool.
         # Dead CLOSE_WAIT sockets in the pool cause kqueue CPU spin if left open.
+        watchdog_ping()
         if agent0 is not None:
             await agent0.close()
         start_cleanup.set()
@@ -506,12 +548,18 @@ async def run_main(
     """
     from .session import TaskflowSession
 
+    # Start the watchdog thread — if the process hangs for any reason
+    # (asyncio spin, dead connections, MCP cleanup), this kills it.
+    start_watchdog()
+
     last_mcp_tool_results: list[str] = []
 
     async def on_tool_end_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool, result: str) -> None:
+        watchdog_ping()
         last_mcp_tool_results.append(result)
 
     async def on_tool_start_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool) -> None:
+        watchdog_ping()
         await render_model_output(f"\n** 🤖🛠️ Tool Call: {tool.name}\n")
 
     async def on_handoff_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], source: Agent[TContext]) -> None:
