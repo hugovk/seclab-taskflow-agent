@@ -63,7 +63,7 @@ STREAM_IDLE_TIMEOUT = 1800
 # Watchdog: a non-asyncio thread that force-kills the process if the event
 # loop stops making progress.  Covers every hang variant (dead connections,
 # asyncio cleanup spin, MCP cleanup, etc.) because it runs outside asyncio.
-WATCHDOG_IDLE_TIMEOUT = int(os.environ.get("WATCHDOG_IDLE_TIMEOUT", "1800"))  # 30 min default
+WATCHDOG_IDLE_TIMEOUT = int(os.environ.get("WATCHDOG_IDLE_TIMEOUT", "2100"))  # 35 min default
 
 _watchdog_last_activity = time.monotonic()
 _watchdog_lock = threading.Lock()
