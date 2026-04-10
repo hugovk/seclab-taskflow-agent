@@ -436,6 +436,7 @@ async def deploy_task_agents(
                 max_retry = MAX_API_RETRY
                 rate_limit_backoff = RATE_LIMIT_BACKOFF
                 while rate_limit_backoff:
+                    result = None
                     try:
                         result = agent0.run_streamed(prompt, max_turns=max_turns)
                         stream = None
@@ -464,6 +465,12 @@ async def deploy_task_agents(
                                 aclose = getattr(stream, "aclose", None)
                                 if aclose is not None:
                                     await aclose()
+                            # Cancel the RunResultStreaming background tasks.
+                            # aclose() on the stream_events() async generator throws
+                            # GeneratorExit which skips _cleanup_tasks(), so we must
+                            # cancel explicitly to avoid leaking _run_impl_task.
+                            if result is not None:
+                                result.cancel()
                         await render_model_output("\n\n", async_task=async_task, task_id=task_id)
                         return
                     except APITimeoutError:
