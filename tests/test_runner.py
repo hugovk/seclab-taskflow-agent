@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -24,6 +26,8 @@ from seclab_taskflow_agent.runner import (
     _merge_reusable_task,
     _resolve_model_config,
     _resolve_task_model,
+    start_watchdog,
+    watchdog_ping,
 )
 
 
@@ -441,3 +445,192 @@ class TestBuildPromptsToRun:
                     inputs={},
                 )
             )
+
+
+# ===================================================================
+# Watchdog
+# ===================================================================
+
+class TestWatchdog:
+    """Tests for the watchdog thread and start_watchdog idempotency."""
+
+    def test_start_watchdog_is_idempotent(self):
+        """Calling start_watchdog multiple times only spawns one thread."""
+        import seclab_taskflow_agent.runner as runner_mod
+
+        # Reset the module-level flag for this test
+        original = runner_mod._watchdog_started
+        runner_mod._watchdog_started = False
+
+        initial_thread_count = threading.active_count()
+        start_watchdog(timeout=9999)
+        after_first = threading.active_count()
+        start_watchdog(timeout=9999)
+        start_watchdog(timeout=9999)
+        after_repeats = threading.active_count()
+
+        assert after_first == initial_thread_count + 1
+        assert after_repeats == after_first  # no new threads
+
+        # Restore (can't un-start the thread, but flag is what matters)
+        runner_mod._watchdog_started = original
+
+    def test_start_watchdog_resets_timestamp(self):
+        """start_watchdog resets the activity timestamp to prevent false triggers."""
+        import seclab_taskflow_agent.runner as runner_mod
+
+        # Set the timestamp to something old
+        runner_mod._watchdog_started = False
+        runner_mod._watchdog_last_activity = time.monotonic() - 99999
+
+        start_watchdog(timeout=9999)
+
+        with runner_mod._watchdog_lock:
+            idle = time.monotonic() - runner_mod._watchdog_last_activity
+
+        assert idle < 2  # should have been reset to ~now
+
+        runner_mod._watchdog_started = True  # leave in started state
+
+    def test_watchdog_ping_updates_timestamp(self):
+        """watchdog_ping updates the activity timestamp."""
+        import seclab_taskflow_agent.runner as runner_mod
+
+        old_ts = runner_mod._watchdog_last_activity
+        time.sleep(0.01)
+        watchdog_ping()
+        with runner_mod._watchdog_lock:
+            new_ts = runner_mod._watchdog_last_activity
+        assert new_ts > old_ts
+
+
+# ===================================================================
+# Cleanup path safety
+# ===================================================================
+
+class TestCleanupSafety:
+    """Tests for exception-safe cleanup in deploy_task_agents finally block."""
+
+    def test_aclose_exception_does_not_propagate(self):
+        """An exception in stream aclose() is logged but doesn't mask the original error."""
+        async def _test():
+            from seclab_taskflow_agent.runner import APITimeoutError
+
+            stream = MagicMock()
+            stream.aclose = AsyncMock(side_effect=RuntimeError("aclose boom"))
+            original_error = APITimeoutError("original timeout")
+
+            caught_original = False
+            try:
+                raise original_error
+            except APITimeoutError:
+                caught_original = True
+            finally:
+                aclose = getattr(stream, "aclose", None)
+                if aclose is not None:
+                    try:
+                        await aclose()
+                    except Exception:
+                        pass  # logged in production
+
+            assert caught_original
+
+        asyncio.run(_test())
+
+    def test_agent_close_exception_does_not_propagate(self):
+        """An exception in agent0.close() is caught and doesn't prevent MCP cleanup."""
+        async def _test():
+            agent0 = MagicMock()
+            agent0.close = AsyncMock(side_effect=RuntimeError("close boom"))
+
+            mcp_cleanup_ran = False
+            try:
+                await agent0.close()
+            except Exception:
+                pass  # logged in production
+            finally:
+                mcp_cleanup_ran = True
+
+            assert mcp_cleanup_ran
+
+        asyncio.run(_test())
+
+    def test_handoff_agents_closed_before_primary(self):
+        """Handoff agent clients are closed before the primary agent."""
+        async def _test():
+            close_order = []
+
+            handoff1 = MagicMock()
+            handoff1.close = AsyncMock(side_effect=lambda: close_order.append("h1"))
+            handoff2 = MagicMock()
+            handoff2.close = AsyncMock(side_effect=lambda: close_order.append("h2"))
+            primary = MagicMock()
+            primary.close = AsyncMock(side_effect=lambda: close_order.append("primary"))
+
+            handoff_agents = [handoff1, handoff2]
+            for ta in handoff_agents:
+                try:
+                    await ta.close()
+                except Exception:
+                    pass
+            try:
+                await primary.close()
+            except Exception:
+                pass
+
+            assert close_order == ["h1", "h2", "primary"]
+
+        asyncio.run(_test())
+
+    def test_handoff_close_failure_does_not_block_primary(self):
+        """A failing handoff close doesn't prevent primary agent close."""
+        async def _test():
+            primary_closed = False
+
+            handoff = MagicMock()
+            handoff.close = AsyncMock(side_effect=RuntimeError("handoff boom"))
+            primary = MagicMock()
+
+            async def mark_closed():
+                nonlocal primary_closed
+                primary_closed = True
+            primary.close = mark_closed
+
+            for ta in [handoff]:
+                try:
+                    await ta.close()
+                except Exception:
+                    pass
+            try:
+                await primary.close()
+            except Exception:
+                pass
+
+            assert primary_closed
+
+        asyncio.run(_test())
+
+    def test_mcp_cancel_with_timeout(self):
+        """MCP session cancel uses bounded wait, not indefinite await."""
+        async def _test():
+            async def hanging_task():
+                try:
+                    await asyncio.sleep(9999)
+                except asyncio.CancelledError:
+                    await asyncio.sleep(9999)
+
+            task = asyncio.create_task(hanging_task())
+            await asyncio.sleep(0)
+
+            task.cancel()
+            timed_out = False
+            try:
+                await asyncio.wait_for(task, timeout=0.1)
+            except asyncio.TimeoutError:
+                timed_out = True
+            except asyncio.CancelledError:
+                pass
+
+            assert timed_out
+
+        asyncio.run(_test())

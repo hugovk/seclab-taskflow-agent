@@ -93,8 +93,16 @@ def _watchdog_thread(timeout: int) -> None:
             os._exit(2)
 
 
+_watchdog_started = False
+
+
 def start_watchdog(timeout: int = WATCHDOG_IDLE_TIMEOUT) -> None:
     """Start the watchdog thread (idempotent, daemon thread)."""
+    global _watchdog_started
+    if _watchdog_started:
+        return
+    _watchdog_started = True
+    watchdog_ping()  # reset timestamp so late callers don't trigger immediately
     t = threading.Thread(target=_watchdog_thread, args=(timeout,), daemon=True)
     t.start()
 
@@ -367,6 +375,9 @@ async def deploy_task_agents(
     await servers_connected.wait()
     logging.debug("All mcp servers are connected!")
 
+    agent0: TaskAgent | None = None
+    handoff_agents: list[TaskAgent] = []
+
     try:
         important_guidelines = [
             "Do not prompt the user with questions.",
@@ -380,29 +391,29 @@ async def deploy_task_agents(
         agent_names = list(agents.keys())
         for handoff_name in agent_names[1:]:
             personality = agents[handoff_name]
-            handoffs.append(
-                TaskAgent(
-                    name=compress_name(handoff_name),
-                    instructions=prompt_with_handoff_instructions(
-                        mcp_system_prompt(
-                            personality.personality,
-                            personality.task,
-                            server_prompts=server_prompts,
-                            important_guidelines=important_guidelines,
-                        )
-                    ),
-                    handoffs=[],
-                    exclude_from_context=exclude_from_context,
-                    mcp_servers=[e.server for e in entries],
-                    model=model,
-                    model_settings=model_settings,
-                    api_type=api_type,
-                    endpoint=endpoint,
-                    token=token,
-                    run_hooks=run_hooks,
-                    agent_hooks=agent_hooks,
-                ).agent
+            ta = TaskAgent(
+                name=compress_name(handoff_name),
+                instructions=prompt_with_handoff_instructions(
+                    mcp_system_prompt(
+                        personality.personality,
+                        personality.task,
+                        server_prompts=server_prompts,
+                        important_guidelines=important_guidelines,
+                    )
+                ),
+                handoffs=[],
+                exclude_from_context=exclude_from_context,
+                mcp_servers=[e.server for e in entries],
+                model=model,
+                model_settings=model_settings,
+                api_type=api_type,
+                endpoint=endpoint,
+                token=token,
+                run_hooks=run_hooks,
+                agent_hooks=agent_hooks,
             )
+            handoff_agents.append(ta)
+            handoffs.append(ta.agent)
 
         # Create primary agent
         primary_name = agent_names[0]
@@ -413,7 +424,6 @@ async def deploy_task_agents(
             server_prompts=server_prompts,
             important_guidelines=important_guidelines,
         )
-        agent0 = None
         agent0 = TaskAgent(
             name=primary_name,
             instructions=prompt_with_handoff_instructions(system_prompt) if handoffs else system_prompt,
@@ -464,7 +474,10 @@ async def deploy_task_agents(
                             if stream is not None:
                                 aclose = getattr(stream, "aclose", None)
                                 if aclose is not None:
-                                    await aclose()
+                                    try:
+                                        await aclose()
+                                    except Exception:
+                                        logging.exception("Failed to close streamed response")
                             # Cancel the RunResultStreaming background tasks.
                             # aclose() on the stream_events() async generator throws
                             # GeneratorExit which skips _cleanup_tasks(), so we must
@@ -510,11 +523,19 @@ async def deploy_task_agents(
         return complete
 
     finally:
-        # Close the AsyncOpenAI client to release httpx connection pool.
+        # Close all AsyncOpenAI clients to release httpx connection pools.
         # Dead CLOSE_WAIT sockets in the pool cause kqueue CPU spin if left open.
         watchdog_ping()
+        for ta in handoff_agents:
+            try:
+                await ta.close()
+            except Exception:
+                logging.exception("Exception closing handoff agent client")
         if agent0 is not None:
-            await agent0.close()
+            try:
+                await agent0.close()
+            except Exception:
+                logging.exception("Exception closing primary agent client")
         start_cleanup.set()
         cleanup_attempts_left = len(entries)
         while cleanup_attempts_left and entries:
@@ -530,9 +551,16 @@ async def deploy_task_agents(
         if not mcp_sessions.done():
             mcp_sessions.cancel()
             try:
-                await mcp_sessions
-            except (asyncio.CancelledError, Exception):
+                await asyncio.wait_for(mcp_sessions, timeout=MCP_CLEANUP_TIMEOUT)
+            except asyncio.TimeoutError:
+                logging.warning(
+                    "Timed out waiting for MCP session task cancellation after %s seconds",
+                    MCP_CLEANUP_TIMEOUT,
+                )
+            except asyncio.CancelledError:
                 pass
+            except Exception:
+                logging.exception("Exception while waiting for MCP session task cancellation")
 
 
 async def run_main(
