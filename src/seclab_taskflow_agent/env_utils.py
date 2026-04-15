@@ -12,14 +12,15 @@ __all__ = ["TmpEnv", "swap_env"]
 
 
 
-def swap_env(s: str) -> str:
-    """Replace {{ env('VAR') }} patterns in string with environment values.
+def swap_env(s: str, context: dict[str, Any] | None = None) -> str:
+    """Replace {{ env('VAR') }} and {{ globals.X }} patterns in string.
 
     Args:
-        s: String potentially containing env templates
+        s: String potentially containing templates
+        context: Optional template context (e.g. {'globals': {...}})
 
     Returns:
-        String with env templates replaced
+        String with templates replaced
 
     Raises:
         LookupError: If required env var not found
@@ -36,7 +37,7 @@ def swap_env(s: str) -> str:
         available_tools = AvailableTools()
         jinja_env = create_jinja_environment(available_tools)
         template = jinja_env.from_string(s)
-        return template.render()
+        return template.render(**(context or {}))
     except jinja2.UndefinedError as e:
         # Convert Jinja undefined to LookupError for compatibility
         raise LookupError(str(e))
@@ -48,13 +49,15 @@ def swap_env(s: str) -> str:
 class TmpEnv:
     """Context manager that temporarily sets environment variables."""
 
-    def __init__(self, env: dict[str, str]) -> None:
+    def __init__(self, env: dict[str, str],
+                 context: dict[str, Any] | None = None) -> None:
         self.env = dict(env)
+        self.context = context
         self.restore_env = dict(os.environ)
 
     def __enter__(self) -> None:
         for k, v in self.env.items():
-            os.environ[k] = swap_env(v)
+            os.environ[k] = swap_env(v, self.context)
 
     def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: Any | None) -> None:
         for k, v in self.env.items():
