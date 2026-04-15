@@ -31,12 +31,7 @@ def swap_env(s: str, context: dict[str, Any] | None = None) -> str:
         LookupError: If a required environment variable or template
             variable is not found during rendering.
     """
-    # Quick check if templating needed
-    if '{{' not in s:
-        return s
-
     try:
-        # Import here to avoid circular dependency
         from .template_utils import create_jinja_environment
         from .available_tools import AvailableTools
 
@@ -52,11 +47,9 @@ def swap_env(s: str, context: dict[str, Any] | None = None) -> str:
         }
         return template.render(**render_context)
     except jinja2.UndefinedError as e:
-        # Convert Jinja undefined to LookupError for compatibility
         raise LookupError(str(e))
-    except jinja2.TemplateError:
-        # Not a template or failed to render, return as-is
-        return s
+    except jinja2.TemplateError as e:
+        raise LookupError(f"Template rendering failed for: {s!r}: {e}")
 
 
 class TmpEnv:
@@ -69,8 +62,18 @@ class TmpEnv:
         self.restore_env = dict(os.environ)
 
     def __enter__(self) -> None:
-        for k, v in self.env.items():
-            os.environ[k] = swap_env(v, self.context)
+        applied: list[str] = []
+        try:
+            for k, v in self.env.items():
+                os.environ[k] = swap_env(v, self.context)
+                applied.append(k)
+        except Exception:
+            for k in applied:
+                if k in self.restore_env:
+                    os.environ[k] = self.restore_env[k]
+                else:
+                    os.environ.pop(k, None)
+            raise
 
     def __exit__(self, exc_type: type | None, exc_val: BaseException | None, exc_tb: Any | None) -> None:
         for k, v in self.env.items():

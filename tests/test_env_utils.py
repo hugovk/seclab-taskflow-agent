@@ -4,14 +4,13 @@
 """Tests for env_utils: swap_env and TmpEnv with globals context."""
 
 import os
-import unittest
 
 import pytest
 
 from seclab_taskflow_agent.env_utils import TmpEnv, swap_env
 
 
-class TestSwapEnv(unittest.TestCase):
+class TestSwapEnv:
     """Tests for swap_env template rendering."""
 
     def test_plain_string_unchanged(self):
@@ -51,7 +50,7 @@ class TestSwapEnv(unittest.TestCase):
         assert swap_env("plain") == "plain"
 
 
-class TestTmpEnv(unittest.TestCase):
+class TestTmpEnv:
     """Tests for TmpEnv context manager with globals."""
 
     def test_globals_rendered_in_env_block(self):
@@ -77,3 +76,11 @@ class TestTmpEnv(unittest.TestCase):
             assert os.environ["RESTORE_TEST"] == "overwritten"
         assert os.environ["RESTORE_TEST"] == "original"
         del os.environ["RESTORE_TEST"]
+
+    def test_tmpenv_rollback_on_error(self):
+        """Partial env modification is rolled back if swap_env raises."""
+        env = {"GOOD_KEY": "value", "BAD_KEY": "{{ globals.missing }}"}
+        with pytest.raises(LookupError), TmpEnv(env):
+            pass
+        assert "GOOD_KEY" not in os.environ
+        assert "BAD_KEY" not in os.environ
