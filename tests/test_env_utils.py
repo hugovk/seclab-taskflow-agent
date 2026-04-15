@@ -6,6 +6,8 @@
 import os
 import unittest
 
+import pytest
+
 from seclab_taskflow_agent.env_utils import TmpEnv, swap_env
 
 
@@ -30,7 +32,7 @@ class TestSwapEnv(unittest.TestCase):
         assert result == "key-GHSA-1234"
 
     def test_globals_without_context_raises(self):
-        with self.assertRaises(LookupError):
+        with pytest.raises(LookupError):
             swap_env("{{ globals.missing }}")
 
     def test_context_cannot_override_env_helper(self):
