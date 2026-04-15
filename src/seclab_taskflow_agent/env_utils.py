@@ -13,17 +13,23 @@ __all__ = ["TmpEnv", "swap_env"]
 
 
 def swap_env(s: str, context: dict[str, Any] | None = None) -> str:
-    """Replace {{ env('VAR') }} and {{ globals.X }} patterns in string.
+    """Render Jinja template expressions in a string.
+
+    Supports expressions such as ``{{ env('VAR') }}``. Template variables
+    like ``{{ globals.X }}`` are only available when provided by the caller
+    via ``context`` (e.g. ``{'globals': {...}}``).
 
     Args:
-        s: String potentially containing templates
-        context: Optional template context (e.g. {'globals': {...}})
+        s: String potentially containing templates.
+        context: Optional template context. Variables such as ``globals``
+            must be supplied here to be available during rendering.
 
     Returns:
-        String with templates replaced
+        String with templates replaced.
 
     Raises:
-        LookupError: If required env var not found
+        LookupError: If a required environment variable or template
+            variable is not found during rendering.
     """
     # Quick check if templating needed
     if '{{' not in s:
@@ -37,7 +43,14 @@ def swap_env(s: str, context: dict[str, Any] | None = None) -> str:
         available_tools = AvailableTools()
         jinja_env = create_jinja_environment(available_tools)
         template = jinja_env.from_string(s)
-        return template.render(**(context or {}))
+        # Filter out keys that collide with built-in template globals
+        # (e.g. the env() helper) to prevent callers from breaking them.
+        reserved_keys = set(jinja_env.globals)
+        render_context = {
+            key: value for key, value in (context or {}).items()
+            if key not in reserved_keys
+        }
+        return template.render(**render_context)
     except jinja2.UndefinedError as e:
         # Convert Jinja undefined to LookupError for compatibility
         raise LookupError(str(e))
