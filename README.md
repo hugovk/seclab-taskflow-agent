@@ -290,11 +290,11 @@ seclab-taskflow-agent:
   filetype: taskflow
 ```
 
-The `version` number in the header is currently 1. It means that the
-file uses version 1 of the seclab-taskflow-agent syntax. If we ever need
+The `version` in the header is currently `"1.0"`. It means that the
+file uses version 1.0 of the seclab-taskflow-agent syntax. If we ever need
 to make a major change to the syntax, then we'll update the version number.
 This will hopefully enable us to make changes without breaking backwards
-compatibility. Version can be specified as an integer, float, or string.
+compatibility. The version should be specified as a string (e.g. `"1.0"`).
 
 The `filetype` determines whether the file defines a personality, toolbox, etc.
 This means that different types of files can be stored in the same directory.
@@ -318,7 +318,7 @@ Example:
 ```yaml
 # personalities define the system prompt level directives for this Agent
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: personality
 
 personality: |
@@ -385,7 +385,7 @@ For example, to start a stdio MCP server that is implemented in a python file:
 ```yaml
 # stdio mcp server configuration
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: toolbox
 
 server_params:
@@ -433,7 +433,7 @@ Example:
 
 ```yaml
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: taskflow
 
 taskflow:
@@ -499,7 +499,7 @@ taskflow:
       agents:
         - seclab_taskflow_agent.personalities.assistant
       user_prompt: |
-        What kind of fruit is {{ RESULT }}?
+        What kind of fruit is {{ result }}?
 ```
 
 Taskflows support [Agent handoffs](https://openai.github.io/openai-agents-python/handoffs/). Handoffs are useful for implementing triage patterns where the primary Agent can decide to handoff a task to any subsequent Agents in the `Agents` list.
@@ -517,18 +517,18 @@ hatch run main -t examples.taskflows.CVE-2023-2283
 
 Prompts are configured through YAML files of `filetype` `prompt`. They define a reusable prompt that can be referenced in `taskflow` files.
 
-They contain only one field, the `prompt` field, which is used to replace any `{{ PROMPT_<import-path> }}` template parameter in a taskflow. For example, the following `prompt`.
+They contain only one field, the `prompt` field. Reusable prompts can be referenced in tasks using Jinja2's `{% include '<import-path>' %}` directive. For example, the following `prompt`.
 
 ```yaml
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: prompt
 
 prompt: |
   Tell me more about bananas as well.
 ```
 
-would replace any `{{ PROMPT_examples.prompts.example_prompt }}` template parameter found in the `user_prompt` section in a taskflow:
+can be referenced from the `user_prompt` section in a taskflow:
 
 ```yaml
   - task:
@@ -537,7 +537,7 @@ would replace any `{{ PROMPT_examples.prompts.example_prompt }}` template parame
       user_prompt: |
         Tell me more about apples.
 
-        {{ PROMPTS_examples.prompts.example_prompt }}
+        {% include 'examples.prompts.example_prompt' %}
 ```
 
 becomes:
@@ -558,7 +558,7 @@ Model configs are configured through YAML files of `filetype` `model_config`. Th
 
 ```yaml
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: model_config
 models:
   gpt_latest: gpt-5
