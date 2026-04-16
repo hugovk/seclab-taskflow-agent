@@ -36,7 +36,7 @@ For example, to use the `personality` defined in the following:
 
 ```yaml
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: personality
 
 personality: |
@@ -456,7 +456,7 @@ and `examples.prompts.example_prompt` is the following:
 
 ```yaml
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: prompt
 
 prompt: |
@@ -481,7 +481,7 @@ LLM models can be configured in a taskflow by setting the `model_config` field t
 
 ```yaml
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: taskflow
 
 model_config: examples.model_configs.model_config
@@ -491,7 +491,7 @@ The variables defined in the `model_config` file can then be used throughout the
 
 ```yaml
 seclab-taskflow-agent:
-  version: 1
+  version: "1.0"
   filetype: model_config
 models:
   gpt_latest: gpt-5
