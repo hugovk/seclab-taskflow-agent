@@ -151,7 +151,13 @@ class AgentBackend(Protocol):
 
     capabilities: BackendCapabilities
 
-    async def build(self, spec: AgentSpec, *, hooks: Any) -> AgentHandle:
+    async def build(
+        self,
+        spec: AgentSpec,
+        *,
+        run_hooks: Any = None,
+        agent_hooks: Any = None,
+    ) -> AgentHandle:
         """Construct a backend-native agent from a neutral spec."""
         ...
 

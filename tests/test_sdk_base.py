@@ -152,13 +152,13 @@ class _FakeBackend:
     def __init__(self, caps):
         self.capabilities = caps
 
-    async def build(self, spec, *, hooks):  # pragma: no cover - not exercised here
+    async def build(self, spec, *, run_hooks=None, agent_hooks=None):  # noqa: ARG002  # pragma: no cover
         return object()
 
-    def run_streamed(self, agent, prompt, *, max_turns):  # pragma: no cover
+    def run_streamed(self, agent, prompt, *, max_turns):  # noqa: ARG002  # pragma: no cover
         raise NotImplementedError
 
-    async def aclose(self, agent):  # pragma: no cover
+    async def aclose(self, agent):  # noqa: ARG002  # pragma: no cover
         return None
 
 
