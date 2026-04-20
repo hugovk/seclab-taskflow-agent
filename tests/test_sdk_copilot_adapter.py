@@ -1,12 +1,7 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
-"""Tests for ``sdk.copilot_sdk.backend``.
-
-The Copilot SDK's transport is mocked: we only verify the adapter's
-glue logic (capability descriptor, build → run_streamed → aclose
-sequence, event translation, exception mapping).
-"""
+"""Tests for the Copilot SDK adapter glue."""
 
 from __future__ import annotations
 
@@ -21,28 +16,58 @@ pytest.importorskip("copilot")
 
 from copilot.generated.session_events import SessionEventType
 
-from seclab_taskflow_agent.sdk import get_backend, get_backend_capabilities
-from seclab_taskflow_agent.sdk.base import (
-    TextDelta,
-    ToolEnd,
-    ToolStart,
+from seclab_taskflow_agent.sdk import get_backend
+from seclab_taskflow_agent.sdk.base import AgentSpec, MCPServerSpec, TextDelta
+from seclab_taskflow_agent.sdk.copilot_sdk.backend import (
+    CopilotSDKBackend,
+    _reasoning_effort,
 )
-from seclab_taskflow_agent.sdk.copilot_sdk.backend import CopilotSDKBackend
-from seclab_taskflow_agent.sdk.errors import BackendBadRequestError, BackendUnexpectedError
-
-
-def test_capability_descriptor_registered():
-    caps = get_backend_capabilities("copilot_sdk")
-    assert caps.name == "copilot_sdk"
-    assert caps.streaming is True
-    assert caps.handoffs is False
-    assert caps.reasoning_effort is True
-    assert caps.temperature is False
+from seclab_taskflow_agent.sdk.errors import (
+    BackendBadRequestError,
+    BackendCapabilityError,
+    BackendUnexpectedError,
+)
 
 
 def test_get_backend_returns_copilot_sdk_instance():
     backend = get_backend("copilot_sdk")
     assert isinstance(backend, CopilotSDKBackend)
+    assert backend.name == "copilot_sdk"
+
+
+def _spec(**overrides) -> AgentSpec:
+    base = {
+        "name": "a",
+        "instructions": "",
+        "model": "gpt-5-mini",
+    }
+    base.update(overrides)
+    return AgentSpec(**base)
+
+
+def test_validate_accepts_minimal_spec():
+    CopilotSDKBackend().validate(_spec())
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "field"),
+    [
+        ({"in_handoff_graph": True}, "handoffs"),
+        ({"exclude_from_context": True}, "exclude_from_context"),
+        ({"model_settings": {"temperature": 0.0}}, "temperature"),
+        ({"model_settings": {"parallel_tool_calls": True}}, "parallel_tool_calls"),
+    ],
+)
+def test_validate_rejects_unsupported(kwargs, field):
+    backend = CopilotSDKBackend()
+    with pytest.raises(BackendCapabilityError, match=field):
+        backend.validate(_spec(**kwargs))
+
+
+def test_validate_rejects_handoff_targets():
+    backend = CopilotSDKBackend()
+    with pytest.raises(BackendCapabilityError, match="handoffs"):
+        backend.validate(_spec(handoffs=[_spec(name="b")]))
 
 
 @dataclass
@@ -52,94 +77,70 @@ class _Event:
 
 
 class _FakeSession:
-    def __init__(self, events: list[_Event]) -> None:
-        self.name = "agent"
-        self._events = events
+    def __init__(self) -> None:
         self.sent: list[str] = []
-        self.disconnected = False
 
     async def send(self, prompt: str) -> str:
         self.sent.append(prompt)
         return "req-1"
 
-    async def disconnect(self) -> None:
-        self.disconnected = True
 
-
-async def _drain(backend, handle, prompt):
-    return [event async for event in backend.run_streamed(handle, prompt, max_turns=10)]
-
-
-def test_run_streamed_translates_events_until_idle():
+def test_run_streamed_translates_deltas_until_idle():
     async def _run():
-        events = [
-            _Event(SessionEventType.ASSISTANT_STREAMING_DELTA, SimpleNamespace(content="hello ")),
-            _Event(SessionEventType.ASSISTANT_STREAMING_DELTA, SimpleNamespace(content="world")),
-            _Event(SessionEventType.TOOL_EXECUTION_START, SimpleNamespace(tool_name="search")),
-            _Event(
-                SessionEventType.TOOL_EXECUTION_COMPLETE,
-                SimpleNamespace(tool_name="search", result="ok"),
-            ),
-            _Event(SessionEventType.SESSION_IDLE),
-        ]
-        session = _FakeSession(events)
+        session = _FakeSession()
         queue: asyncio.Queue[Any] = asyncio.Queue()
-        for ev in events:
+        for ev in (
+            _Event(SessionEventType.ASSISTANT_MESSAGE_DELTA, SimpleNamespace(delta_content="hi ")),
+            _Event(SessionEventType.ASSISTANT_MESSAGE_DELTA, SimpleNamespace(delta_content="there")),
+            _Event(SessionEventType.SESSION_IDLE),
+        ):
             queue.put_nowait(ev)
         handle = SimpleNamespace(client=None, session=session, event_queue=queue)
         backend = CopilotSDKBackend()
-        out = await _drain(backend, handle, "go")
-        return session, out
+        return session, [
+            event async for event in backend.run_streamed(handle, "go", max_turns=10)
+        ]
 
     session, out = asyncio.run(_run())
     assert session.sent == ["go"]
-    assert out == [
-        TextDelta(text="hello "),
-        TextDelta(text="world"),
-        ToolStart(tool_name="search", agent_name="agent"),
-        ToolEnd(tool_name="search", agent_name="agent", result="ok"),
-    ]
+    assert out == [TextDelta(text="hi "), TextDelta(text="there")]
 
 
 def test_run_streamed_session_error_raises():
     async def _run():
-        events = [
-            _Event(SessionEventType.SESSION_ERROR, SimpleNamespace(message="boom")),
-        ]
         queue: asyncio.Queue[Any] = asyncio.Queue()
-        for ev in events:
-            queue.put_nowait(ev)
-        handle = SimpleNamespace(
-            client=None, session=_FakeSession(events), event_queue=queue
-        )
-        backend = CopilotSDKBackend()
-        await _drain(backend, handle, "go")
+        queue.put_nowait(_Event(SessionEventType.SESSION_ERROR, SimpleNamespace(message="boom")))
+        handle = SimpleNamespace(client=None, session=_FakeSession(), event_queue=queue)
+        async for _ in CopilotSDKBackend().run_streamed(handle, "go", max_turns=10):
+            pass
 
     with pytest.raises(BackendUnexpectedError, match="boom"):
         asyncio.run(_run())
 
 
 def test_invalid_reasoning_effort_rejected():
-    from seclab_taskflow_agent.sdk.copilot_sdk.backend import _reasoning_effort
-
     with pytest.raises(BackendBadRequestError, match="reasoning_effort"):
         _reasoning_effort({"reasoning_effort": "ludicrous"})
 
 
+def test_aclose_handles_none():
+    asyncio.run(CopilotSDKBackend().aclose(None))
+
+
 def test_aclose_swallows_disconnect_failures():
     class _BadSession:
-        async def disconnect(self):
+        async def disconnect(self) -> None:
             raise RuntimeError("nope")
 
     class _Client:
-        async def stop(self):
+        async def stop(self) -> None:
             return None
 
-    async def _run():
-        handle = SimpleNamespace(
-            client=_Client(), session=_BadSession(), event_queue=asyncio.Queue()
-        )
-        backend = CopilotSDKBackend()
-        await backend.aclose(handle)
+    handle = SimpleNamespace(client=_Client(), session=_BadSession(), event_queue=asyncio.Queue())
+    asyncio.run(CopilotSDKBackend().aclose(handle))
 
-    asyncio.run(_run())
+
+def test_mcp_specs_are_used():
+    # Sanity: MCPServerSpec is what build() consumes via build_mcp_config.
+    spec = _spec(mcp_servers=[MCPServerSpec(name="m", kind="stdio", params={"command": "x"})])
+    CopilotSDKBackend().validate(spec)

@@ -1,133 +1,55 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
-"""Backend-neutral SDK abstraction for the taskflow runner.
+"""Backend factory for the agent runner.
 
-The runner consumes only this package; concrete adapters live in
-``sdk.openai_agents`` and ``sdk.copilot_sdk`` and are loaded lazily so
-that optional dependencies (the Copilot SDK in particular) are only
-imported when actually requested.
+Two backends are supported: ``openai_agents`` (default) and
+``copilot_sdk`` (optional, requires ``pip install
+seclab-taskflow-agent[copilot]``).
 """
 
 from __future__ import annotations
 
 __all__ = [
     "AgentBackend",
-    "AgentHandle",
     "AgentSpec",
-    "BackendCapabilities",
-    "BackendName",
     "MCPServerSpec",
-    "RunResult",
     "StreamEvent",
     "TextDelta",
-    "ToolEnd",
-    "ToolSpec",
-    "ToolStart",
-    "available_backends",
     "get_backend",
-    "get_backend_capabilities",
-    "register_backend",
-    "register_backend_capabilities",
     "resolve_backend_name",
 ]
 
 import contextlib
-import importlib
 import os
-from typing import get_args
 
 from .base import (
     AgentBackend,
-    AgentHandle,
     AgentSpec,
-    BackendCapabilities,
-    BackendName,
     MCPServerSpec,
-    RunResult,
     StreamEvent,
     TextDelta,
-    ToolEnd,
-    ToolSpec,
-    ToolStart,
 )
 
 _ENV_VAR = "SECLAB_TASKFLOW_BACKEND"
-
-_CAPABILITIES: dict[str, BackendCapabilities] = {}
+_KNOWN = ("openai_agents", "copilot_sdk")
 _BACKENDS: dict[str, AgentBackend] = {}
-
-# Module path each backend name auto-imports on demand. Importing the
-# module is expected to register the adapter via ``register_backend``.
-_BACKEND_MODULES: dict[str, str] = {
-    "openai_agents": "seclab_taskflow_agent.sdk.openai_agents",
-    "copilot_sdk": "seclab_taskflow_agent.sdk.copilot_sdk",
-}
-
-
-def _autoload_backend(name: str) -> None:
-    module_path = _BACKEND_MODULES.get(name)
-    if module_path is None:
-        return
-    # Adapter's optional dependencies may not be installed; the caller
-    # will surface a clear error via get_backend()/resolve_backend_name.
-    with contextlib.suppress(ImportError):
-        importlib.import_module(module_path)
-
-
-def register_backend_capabilities(caps: BackendCapabilities) -> None:
-    """Register a backend's capability descriptor.
-
-    Adapters call this at import time so consumers can introspect
-    ``available_backends()`` and ``get_backend_capabilities()`` without
-    triggering the adapter's own optional dependencies.
-    """
-    if caps.name not in get_args(BackendName):
-        raise ValueError(f"Unknown backend name: {caps.name!r}")
-    _CAPABILITIES[caps.name] = caps
-
-
-def register_backend(backend: AgentBackend) -> None:
-    """Register a backend adapter instance.
-
-    The adapter's ``capabilities`` are also registered automatically so
-    callers can introspect capabilities without instantiating the
-    backend explicitly.
-    """
-    caps = backend.capabilities
-    register_backend_capabilities(caps)
-    _BACKENDS[caps.name] = backend
 
 
 def get_backend(name: str) -> AgentBackend:
-    """Return the backend adapter instance registered for *name*.
-
-    Adapters are imported on demand: the first call for a given name
-    imports the adapter module (which registers itself on import).
-    """
+    """Return the backend adapter instance for *name*, importing it lazily."""
+    if name not in _KNOWN:
+        raise ValueError(f"Unknown backend {name!r}. Known: {_KNOWN}")
     if name not in _BACKENDS:
-        _autoload_backend(name)
-    try:
-        return _BACKENDS[name]
-    except KeyError as exc:
-        raise ValueError(
-            f"Backend {name!r} is not registered. Known backends: {tuple(sorted(_BACKENDS))}"
-        ) from exc
+        if name == "openai_agents":
+            from .openai_agents.backend import OpenAIAgentsBackend
 
+            _BACKENDS[name] = OpenAIAgentsBackend()
+        else:
+            from .copilot_sdk.backend import CopilotSDKBackend
 
-def available_backends() -> tuple[str, ...]:
-    """Return the names of backends whose capabilities have been registered."""
-    return tuple(sorted(_CAPABILITIES))
-
-
-def get_backend_capabilities(name: str) -> BackendCapabilities:
-    """Return the capability descriptor for the named backend."""
-    try:
-        return _CAPABILITIES[name]
-    except KeyError as exc:
-        raise ValueError(
-            f"Backend {name!r} is not registered. Known backends: {available_backends()}"
-        ) from exc
+            _BACKENDS[name] = CopilotSDKBackend()
+    return _BACKENDS[name]
 
 
 def resolve_backend_name(
@@ -137,30 +59,16 @@ def resolve_backend_name(
 ) -> str:
     """Pick the backend to use for a run.
 
-    Resolution order, highest precedence first:
-
-    1. ``explicit`` argument (typically ``ModelConfigDocument.backend``).
-    2. ``SECLAB_TASKFLOW_BACKEND`` environment variable.
-    3. Endpoint-based auto-default — ``api.githubcopilot.com`` prefers
-       ``copilot_sdk`` when its capabilities have been registered.
-    4. ``openai_agents`` as the safe default.
-
-    The chosen name is validated against the registered backends.
+    Precedence: ``explicit`` > ``SECLAB_TASKFLOW_BACKEND`` env var >
+    endpoint auto-default (Copilot endpoint prefers ``copilot_sdk`` when
+    the optional dependency is installed) > ``openai_agents``.
     """
-    candidate = explicit or os.getenv(_ENV_VAR) or _auto_default(endpoint)
-    if candidate not in _CAPABILITIES:
-        _autoload_backend(candidate)
-    if candidate not in _CAPABILITIES:
-        raise ValueError(
-            f"Backend {candidate!r} is not available. "
-            f"Known backends: {available_backends()}"
-        )
-    return candidate
-
-
-def _auto_default(endpoint: str | None) -> str:
-    if endpoint and "api.githubcopilot.com" in endpoint:
-        _autoload_backend("copilot_sdk")
-        if "copilot_sdk" in _CAPABILITIES:
-            return "copilot_sdk"
-    return "openai_agents"
+    name = explicit or os.getenv(_ENV_VAR)
+    if not name and endpoint and "api.githubcopilot.com" in endpoint:
+        with contextlib.suppress(ImportError):
+            __import__("copilot")
+            name = "copilot_sdk"
+    name = name or "openai_agents"
+    if name not in _KNOWN:
+        raise ValueError(f"Unknown backend {name!r}. Known: {_KNOWN}")
+    return name

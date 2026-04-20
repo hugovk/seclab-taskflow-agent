@@ -22,7 +22,6 @@ __all__ = [
 import asyncio
 import json
 import logging
-import os
 import uuid
 from typing import TYPE_CHECKING, Any
 
@@ -37,7 +36,6 @@ from .mcp_utils import compress_name, mcp_client_params
 from .models import ModelConfigDocument, PersonalityDocument, TaskDefinition
 from .render_utils import flush_async_output, render_model_output
 from .sdk import AgentSpec, MCPServerSpec, TextDelta, get_backend, resolve_backend_name
-from .sdk.capabilities import assert_supported
 from .sdk.errors import (
     BackendBadRequestError,
     BackendMaxTurnsError,
@@ -303,61 +301,32 @@ async def deploy_task_agents(
                 if tb not in toolboxes:
                     toolboxes.append(tb)
 
-    # Resolve which SDK adapter drives this run, then gate the YAML
-    # against its capabilities before building any model settings so a
-    # mis-targeted task fails fast with a clear message.
+    # Resolve the SDK adapter; it validates each spec just before build().
     backend_name = resolve_backend_name(explicit=backend, endpoint=endpoint)
     backend_impl = get_backend(backend_name)
-    caps = backend_impl.capabilities
-    assert_supported(
-        caps,
-        agents_count=len(agents),
-        api_type=api_type,
-        model_settings=model_par,
-        exclude_from_context=exclude_from_context,
-    )
 
-    # Model settings. Defaults are only injected when the backend
-    # supports them; the adapter materialises whatever native settings
-    # object it needs from this plain dict.
-    parallel_tool_calls = bool(os.getenv("MODEL_PARALLEL_TOOL_CALLS"))
-    model_params: dict[str, Any] = {
-        "tool_choice": "auto" if toolboxes else None,
-    }
-    if caps.parallel_tool_calls:
-        model_params["parallel_tool_calls"] = parallel_tool_calls if toolboxes else None
-    model_temp = os.getenv("MODEL_TEMP")
-    if model_temp is not None and caps.temperature:
-        model_params["temperature"] = model_temp
-    elif api_type != "responses" and caps.temperature:
-        model_params["temperature"] = 0.0
-    model_params.update(model_par)
+    # Pass the user-provided model_settings through verbatim. The
+    # openai-agents adapter applies its own tool_choice / temperature /
+    # parallel_tool_calls defaults; the copilot adapter consumes only
+    # ``reasoning_effort``.
+    model_params: dict[str, Any] = dict(model_par)
 
     # Build MCP servers and collect server prompts
     entries = build_mcp_servers(available_tools, toolboxes, blocked_tools, headless)
     mcp_params = mcp_client_params(available_tools, toolboxes)
     server_prompts = [sp for _, (_, _, sp, _) in mcp_params.items()]
 
-    # Wrap each materialised MCP server as a neutral spec carrying both
-    # the openai-agents-shaped server (under ``_native``) and the raw
-    # client params the Copilot SDK adapter needs to materialise an
-    # MCPServerConfig of its own.
+    # Wrap each built MCP server in a neutral spec. The openai
+    # adapter unwraps ``params["_native"]``; the Copilot adapter reads
+    # ``kind`` plus the raw transport keys.
     mcp_specs: list[MCPServerSpec] = []
     for entry in entries:
-        tb_name = entry.server.name
-        raw_params, raw_confirms, raw_prompt, raw_timeout = mcp_params.get(
-            tb_name, ({}, [], "", 0.0)
-        )
-        kind = raw_params.get("kind", "stdio")
+        raw_params, *_ = mcp_params.get(entry.server.name, ({}, [], "", 0.0))
         mcp_specs.append(
             MCPServerSpec(
-                name=tb_name,
-                kind=kind,
+                name=entry.server.name,
+                kind=raw_params.get("kind", "stdio"),
                 params={**raw_params, "_native": entry.server},
-                confirms=list(raw_confirms),
-                server_prompt=raw_prompt or "",
-                client_session_timeout=float(raw_timeout or 0.0),
-                reconnecting=bool(raw_params.get("reconnecting", False)),
             )
         )
 
@@ -432,6 +401,10 @@ async def deploy_task_agents(
             blocked_tools=blocked_tools,
             headless=headless,
         )
+        # Validate every spec (handoffs first, then primary) before
+        # touching the backend so capability errors surface upfront.
+        for spec in (*handoff_specs, primary_spec):
+            backend_impl.validate(spec)
         agent_handle = await backend_impl.build(
             primary_spec, run_hooks=run_hooks, agent_hooks=agent_hooks
         )

@@ -27,7 +27,7 @@ class BackendError(Exception):
 class BackendCapabilityError(BackendError):
     """The active backend does not support a requested YAML feature.
 
-    Raised at task materialisation so misconfiguration fails before any
+    Raised at task build time so misconfiguration fails before any
     network call is made. The message names the offending field and the
     backend that rejected it.
     """

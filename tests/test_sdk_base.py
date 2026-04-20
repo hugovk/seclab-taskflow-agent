@@ -1,198 +1,86 @@
 # SPDX-FileCopyrightText: GitHub, Inc.
 # SPDX-License-Identifier: MIT
 
-"""Tests for the backend-neutral SDK abstraction skeleton."""
+"""Tests for the backend factory and base types."""
 
 from __future__ import annotations
 
 import pytest
 
 from seclab_taskflow_agent import sdk
-from seclab_taskflow_agent.sdk.base import (
-    AgentSpec,
-    BackendCapabilities,
-    MCPServerSpec,
-    StreamEvent,
-    TextDelta,
-    ToolEnd,
-    ToolSpec,
-    ToolStart,
-)
-
-_OPENAI_CAPS = BackendCapabilities(
-    name="openai_agents",
-    streaming=True,
-    handoffs=True,
-    custom_tools=False,
-    mcp_stdio=True,
-    mcp_sse=True,
-    mcp_streamable_http=True,
-    tool_use_behavior_exclude=True,
-    parallel_tool_calls=True,
-    temperature=True,
-    reasoning_effort=False,
-    responses_api=True,
-)
-
-_COPILOT_CAPS = BackendCapabilities(
-    name="copilot_sdk",
-    streaming=True,
-    handoffs=False,
-    custom_tools=True,
-    mcp_stdio=True,
-    mcp_sse=False,
-    mcp_streamable_http=False,
-    tool_use_behavior_exclude=False,
-    parallel_tool_calls=False,
-    temperature=False,
-    reasoning_effort=True,
-    responses_api=False,
-)
+from seclab_taskflow_agent.sdk.base import AgentSpec, MCPServerSpec, TextDelta
 
 
-@pytest.fixture(autouse=True)
-def _clean_registry(monkeypatch):
-    monkeypatch.setattr(sdk, "_CAPABILITIES", {})
-    monkeypatch.setattr(sdk, "_BACKENDS", {})
-    monkeypatch.delenv("SECLAB_TASKFLOW_BACKEND", raising=False)
+def test_get_backend_returns_openai_agents_by_default():
+    backend = sdk.get_backend("openai_agents")
+    assert backend.name == "openai_agents"
+    # Cached singleton.
+    assert sdk.get_backend("openai_agents") is backend
 
 
-def test_register_and_lookup_capabilities():
-    sdk.register_backend_capabilities(_OPENAI_CAPS)
-    assert sdk.available_backends() == ("openai_agents",)
-    assert sdk.get_backend_capabilities("openai_agents") is _OPENAI_CAPS
+def test_get_backend_rejects_unknown_name():
+    with pytest.raises(ValueError, match="Unknown backend"):
+        sdk.get_backend("nope")
 
 
-def test_register_rejects_unknown_backend_name():
-    bad = BackendCapabilities(
-        name="not_a_backend",  # type: ignore[arg-type]
-        streaming=False, handoffs=False, custom_tools=False,
-        mcp_stdio=False, mcp_sse=False, mcp_streamable_http=False,
-        tool_use_behavior_exclude=False, parallel_tool_calls=False,
-        temperature=False, reasoning_effort=False, responses_api=False,
-    )
-    with pytest.raises(ValueError, match="Unknown backend name"):
-        sdk.register_backend_capabilities(bad)
-
-
-def test_get_capabilities_unknown_raises():
-    with pytest.raises(ValueError, match="not registered"):
-        sdk.get_backend_capabilities("openai_agents")
-
-
-def test_resolve_explicit_wins(monkeypatch):
-    sdk.register_backend_capabilities(_OPENAI_CAPS)
-    sdk.register_backend_capabilities(_COPILOT_CAPS)
+def test_resolve_backend_explicit_wins(monkeypatch):
     monkeypatch.setenv("SECLAB_TASKFLOW_BACKEND", "copilot_sdk")
     assert sdk.resolve_backend_name(explicit="openai_agents") == "openai_agents"
 
 
-def test_resolve_env_beats_auto_default(monkeypatch):
-    sdk.register_backend_capabilities(_OPENAI_CAPS)
-    sdk.register_backend_capabilities(_COPILOT_CAPS)
-    monkeypatch.setenv("SECLAB_TASKFLOW_BACKEND", "openai_agents")
-    assert sdk.resolve_backend_name(endpoint="https://api.githubcopilot.com") == "openai_agents"
+def test_resolve_backend_env_var(monkeypatch):
+    monkeypatch.setenv("SECLAB_TASKFLOW_BACKEND", "copilot_sdk")
+    assert sdk.resolve_backend_name() == "copilot_sdk"
 
 
-def test_resolve_auto_default_copilot_endpoint():
-    sdk.register_backend_capabilities(_OPENAI_CAPS)
-    sdk.register_backend_capabilities(_COPILOT_CAPS)
-    assert sdk.resolve_backend_name(endpoint="https://api.githubcopilot.com/") == "copilot_sdk"
-
-
-def test_resolve_auto_default_without_copilot_registered(monkeypatch):
-    sdk.register_backend_capabilities(_OPENAI_CAPS)
-    # Simulate the copilot adapter module being absent (optional dep
-    # not installed): drop it from the autoload map so the resolver
-    # cannot register it on demand.
-    monkeypatch.setitem(sdk._BACKEND_MODULES, "copilot_sdk", "seclab_taskflow_agent._missing")
-    # Copilot endpoint but SDK adapter never registered → stay on openai_agents.
-    assert sdk.resolve_backend_name(endpoint="https://api.githubcopilot.com") == "openai_agents"
-
-
-def test_resolve_default_is_openai_agents():
-    sdk.register_backend_capabilities(_OPENAI_CAPS)
+def test_resolve_backend_default_is_openai_agents(monkeypatch):
+    monkeypatch.delenv("SECLAB_TASKFLOW_BACKEND", raising=False)
     assert sdk.resolve_backend_name() == "openai_agents"
 
 
-def test_resolve_unknown_candidate_raises(monkeypatch):
-    sdk.register_backend_capabilities(_OPENAI_CAPS)
-    monkeypatch.setitem(sdk._BACKEND_MODULES, "copilot_sdk", "seclab_taskflow_agent._missing")
-    with pytest.raises(ValueError, match="not available"):
-        sdk.resolve_backend_name(explicit="copilot_sdk")
+def test_resolve_backend_copilot_endpoint_prefers_copilot_when_installed(monkeypatch):
+    monkeypatch.delenv("SECLAB_TASKFLOW_BACKEND", raising=False)
+    pytest.importorskip("copilot")
+    assert (
+        sdk.resolve_backend_name(endpoint="https://api.githubcopilot.com")
+        == "copilot_sdk"
+    )
 
 
-def test_stream_event_union_covers_all_variants():
-    events: list[StreamEvent] = [
-        TextDelta("hi"),
-        ToolStart(tool_name="t", agent_name="a"),
-        ToolEnd(tool_name="t", agent_name="a", result="ok"),
-    ]
-    assert [type(e).__name__ for e in events] == ["TextDelta", "ToolStart", "ToolEnd"]
+def test_resolve_backend_copilot_endpoint_falls_back_when_missing(monkeypatch):
+    monkeypatch.delenv("SECLAB_TASKFLOW_BACKEND", raising=False)
+    # Force the optional import to fail by stashing a sentinel in sys.modules.
+    import sys
+
+    monkeypatch.setitem(sys.modules, "copilot", None)
+    assert (
+        sdk.resolve_backend_name(endpoint="https://api.githubcopilot.com")
+        == "openai_agents"
+    )
 
 
-def test_agent_spec_defaults():
+def test_resolve_backend_rejects_unknown(monkeypatch):
+    monkeypatch.setenv("SECLAB_TASKFLOW_BACKEND", "nope")
+    with pytest.raises(ValueError, match="Unknown backend"):
+        sdk.resolve_backend_name()
+
+
+def test_agent_spec_defaults_are_safe():
     spec = AgentSpec(name="n", instructions="", model="gpt-5")
-    assert spec.handoffs == []
-    assert spec.tools == []
+    assert spec.model_settings == {}
     assert spec.mcp_servers == []
-    assert spec.api_type is None
-    assert spec.exclude_from_context is False
+    assert spec.handoffs == []
+    assert spec.blocked_tools == []
+    assert spec.headless is False
+    assert spec.in_handoff_graph is False
 
 
-def test_mcp_and_tool_spec_are_immutable():
-    from dataclasses import FrozenInstanceError
-
-    mcp = MCPServerSpec(name="tb", kind="stdio", params={"command": "x"})
-    tool = ToolSpec(name="t", description="", parameters={}, handler=lambda _x: "")
-    with pytest.raises(FrozenInstanceError):
-        mcp.name = "other"  # type: ignore[misc]
-    with pytest.raises(FrozenInstanceError):
-        tool.name = "other"  # type: ignore[misc]
+def test_text_delta_is_a_stream_event():
+    event: sdk.StreamEvent = TextDelta(text="hi")
+    assert event.text == "hi"
 
 
-class _FakeBackend:
-    """Minimal backend for testing registry wiring."""
-
-    def __init__(self, caps):
-        self.capabilities = caps
-
-    async def build(self, spec, *, run_hooks=None, agent_hooks=None):  # noqa: ARG002  # pragma: no cover
-        return object()
-
-    def run_streamed(self, agent, prompt, *, max_turns):  # noqa: ARG002  # pragma: no cover
-        raise NotImplementedError
-
-    async def aclose(self, agent):  # noqa: ARG002  # pragma: no cover
-        return None
-
-
-def test_register_backend_also_registers_capabilities():
-    fake = _FakeBackend(_OPENAI_CAPS)
-    sdk.register_backend(fake)
-    assert sdk.get_backend("openai_agents") is fake
-    assert sdk.get_backend_capabilities("openai_agents") is _OPENAI_CAPS
-    assert sdk.available_backends() == ("openai_agents",)
-
-
-def test_get_backend_unknown_raises():
-    with pytest.raises(ValueError, match="not registered"):
-        sdk.get_backend("nonexistent_backend")
-
-
-def test_get_backend_autoloads_adapter_module():
-    """get_backend imports the adapter module on demand so callers don't
-    have to remember to import sdk.openai_agents themselves."""
-    # The fixture wipes the in-memory registry each test, but the module
-    # cache still has the prior import. Re-register by triggering the
-    # autoload path through resolve_backend_name → get_backend.
-    import importlib
-    import seclab_taskflow_agent.sdk.openai_agents as adapter
-    importlib.reload(adapter)  # re-runs register_backend()
-    assert sdk.get_backend("openai_agents") is not None
-
-
-def test_fake_backend_satisfies_protocol():
-    from seclab_taskflow_agent.sdk.base import AgentBackend
-
-    assert isinstance(_FakeBackend(_OPENAI_CAPS), AgentBackend)
+def test_mcp_server_spec_round_trip():
+    spec = MCPServerSpec(name="x", kind="stdio", params={"command": "/bin/x"})
+    assert spec.kind == "stdio"
+    assert spec.params["command"] == "/bin/x"

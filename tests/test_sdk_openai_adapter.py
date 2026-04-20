@@ -31,23 +31,21 @@ def _collect(async_iter):
 
 
 def test_adapter_is_registered_on_import():
-    # Importing the adapter package (already imported by the test module
-    # through the backend import) registers the backend.
-    import seclab_taskflow_agent.sdk.openai_agents  # noqa: F401
-
-    assert sdk.get_backend("openai_agents").capabilities.name == "openai_agents"
+    backend = sdk.get_backend("openai_agents")
+    assert backend.name == "openai_agents"
 
 
-def test_capabilities_reflect_openai_agents_features(backend):
-    caps = backend.capabilities
-    assert caps.streaming is True
-    assert caps.handoffs is True
-    assert caps.tool_use_behavior_exclude is True
-    assert caps.mcp_stdio
-    assert caps.mcp_sse
-    assert caps.mcp_streamable_http
-    assert caps.responses_api is True
-    assert caps.reasoning_effort is False  # openai-agents doesn't expose this natively
+def test_validate_accepts_any_supported_spec(backend):
+    backend.validate(
+        AgentSpec(
+            name="n",
+            instructions="",
+            model="m",
+            model_settings={"temperature": 0.5, "parallel_tool_calls": True},
+            in_handoff_graph=True,
+            exclude_from_context=True,
+        )
+    )
 
 
 class _FakeDelta:
@@ -248,7 +246,7 @@ def test_build_applies_handoff_prompt_when_flagged(monkeypatch, backend):
 
 
 def test_build_recurses_into_handoffs(monkeypatch, backend):
-    """Handoff sub-specs are materialised via nested build() calls."""
+    """Handoff sub-specs are built via nested build() calls."""
     built: list[str] = []
 
     class _FakeTaskAgent:

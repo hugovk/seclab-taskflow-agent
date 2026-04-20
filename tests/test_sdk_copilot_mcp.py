@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from seclab_taskflow_agent.sdk.base import MCPServerSpec
-from seclab_taskflow_agent.sdk.copilot_sdk.mcp import materialise_mcp_servers
+from seclab_taskflow_agent.sdk.copilot_sdk.mcp import build_mcp_config
 
 
 def test_stdio_spec_translated_to_subprocess_config():
@@ -19,12 +19,11 @@ def test_stdio_spec_translated_to_subprocess_config():
                 "args": ["--root", "/tmp"],
                 "env": {"FOO": "1"},
                 "cwd": "/work",
+                "timeout": 2.5,
             },
-            client_session_timeout=2.5,
         )
     ]
-    result = materialise_mcp_servers(specs)
-    assert result == {
+    assert build_mcp_config(specs) == {
         "files": {
             "type": "stdio",
             "command": "/usr/bin/mcp",
@@ -45,12 +44,11 @@ def test_sse_spec_translated_to_remote_config():
             params={
                 "url": "https://example.com/mcp",
                 "headers": {"Authorization": "Bearer x"},
+                "timeout": 10.0,
             },
-            client_session_timeout=10.0,
         )
     ]
-    result = materialise_mcp_servers(specs)
-    assert result == {
+    assert build_mcp_config(specs) == {
         "docs": {
             "type": "sse",
             "url": "https://example.com/mcp",
@@ -69,17 +67,17 @@ def test_streamable_spec_uses_http_type():
             params={"url": "https://api.example.com/mcp"},
         )
     ]
-    result = materialise_mcp_servers(specs)
-    assert result["gh"]["type"] == "http"
-    assert result["gh"]["url"] == "https://api.example.com/mcp"
+    out = build_mcp_config(specs)
+    assert out["gh"]["type"] == "http"
+    assert out["gh"]["url"] == "https://api.example.com/mcp"
 
 
 def test_streamable_spec_without_url_is_skipped():
-    specs = [MCPServerSpec(name="inproc", kind="streamable", params={})]
-    assert materialise_mcp_servers(specs) == {}
+    assert build_mcp_config([MCPServerSpec(name="x", kind="streamable", params={})]) == {}
 
 
 def test_stdio_minimal_defaults():
     specs = [MCPServerSpec(name="m", kind="stdio", params={"command": "x"})]
-    result = materialise_mcp_servers(specs)
-    assert result["m"] == {"type": "stdio", "command": "x", "args": [], "tools": ["*"]}
+    assert build_mcp_config(specs) == {
+        "m": {"type": "stdio", "command": "x", "args": [], "tools": ["*"]}
+    }
