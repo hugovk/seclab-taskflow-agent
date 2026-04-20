@@ -12,6 +12,8 @@ imported when actually requested.
 from __future__ import annotations
 
 __all__ = [
+    "AgentBackend",
+    "AgentHandle",
     "AgentSpec",
     "BackendCapabilities",
     "BackendName",
@@ -23,7 +25,9 @@ __all__ = [
     "ToolSpec",
     "ToolStart",
     "available_backends",
+    "get_backend",
     "get_backend_capabilities",
+    "register_backend",
     "register_backend_capabilities",
     "resolve_backend_name",
 ]
@@ -32,6 +36,8 @@ import os
 from typing import get_args
 
 from .base import (
+    AgentBackend,
+    AgentHandle,
     AgentSpec,
     BackendCapabilities,
     BackendName,
@@ -47,6 +53,7 @@ from .base import (
 _ENV_VAR = "SECLAB_TASKFLOW_BACKEND"
 
 _CAPABILITIES: dict[str, BackendCapabilities] = {}
+_BACKENDS: dict[str, AgentBackend] = {}
 
 
 def register_backend_capabilities(caps: BackendCapabilities) -> None:
@@ -59,6 +66,28 @@ def register_backend_capabilities(caps: BackendCapabilities) -> None:
     if caps.name not in get_args(BackendName):
         raise ValueError(f"Unknown backend name: {caps.name!r}")
     _CAPABILITIES[caps.name] = caps
+
+
+def register_backend(backend: AgentBackend) -> None:
+    """Register a backend adapter instance.
+
+    The adapter's ``capabilities`` are also registered automatically so
+    callers can introspect capabilities without instantiating the
+    backend explicitly.
+    """
+    caps = backend.capabilities
+    register_backend_capabilities(caps)
+    _BACKENDS[caps.name] = backend
+
+
+def get_backend(name: str) -> AgentBackend:
+    """Return the backend adapter instance registered for *name*."""
+    try:
+        return _BACKENDS[name]
+    except KeyError as exc:
+        raise ValueError(
+            f"Backend {name!r} is not registered. Known backends: {tuple(sorted(_BACKENDS))}"
+        ) from exc
 
 
 def available_backends() -> tuple[str, ...]:

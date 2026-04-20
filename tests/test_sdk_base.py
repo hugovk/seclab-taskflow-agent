@@ -53,6 +53,7 @@ _COPILOT_CAPS = BackendCapabilities(
 @pytest.fixture(autouse=True)
 def _clean_registry(monkeypatch):
     monkeypatch.setattr(sdk, "_CAPABILITIES", {})
+    monkeypatch.setattr(sdk, "_BACKENDS", {})
     monkeypatch.delenv("SECLAB_TASKFLOW_BACKEND", raising=False)
 
 
@@ -143,3 +144,38 @@ def test_mcp_and_tool_spec_are_immutable():
         mcp.name = "other"  # type: ignore[misc]
     with pytest.raises(FrozenInstanceError):
         tool.name = "other"  # type: ignore[misc]
+
+
+class _FakeBackend:
+    """Minimal backend for testing registry wiring."""
+
+    def __init__(self, caps):
+        self.capabilities = caps
+
+    async def build(self, spec, *, hooks):  # pragma: no cover - not exercised here
+        return object()
+
+    def run_streamed(self, agent, prompt, *, max_turns):  # pragma: no cover
+        raise NotImplementedError
+
+    async def aclose(self, agent):  # pragma: no cover
+        return None
+
+
+def test_register_backend_also_registers_capabilities():
+    fake = _FakeBackend(_OPENAI_CAPS)
+    sdk.register_backend(fake)
+    assert sdk.get_backend("openai_agents") is fake
+    assert sdk.get_backend_capabilities("openai_agents") is _OPENAI_CAPS
+    assert sdk.available_backends() == ("openai_agents",)
+
+
+def test_get_backend_unknown_raises():
+    with pytest.raises(ValueError, match="not registered"):
+        sdk.get_backend("openai_agents")
+
+
+def test_fake_backend_satisfies_protocol():
+    from seclab_taskflow_agent.sdk.base import AgentBackend
+
+    assert isinstance(_FakeBackend(_OPENAI_CAPS), AgentBackend)

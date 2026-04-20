@@ -12,6 +12,8 @@ this module.
 from __future__ import annotations
 
 __all__ = [
+    "AgentBackend",
+    "AgentHandle",
     "AgentSpec",
     "BackendCapabilities",
     "BackendName",
@@ -24,8 +26,9 @@ __all__ = [
     "ToolStart",
 ]
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Protocol, runtime_checkable
 
 BackendName = Literal["openai_agents", "copilot_sdk"]
 
@@ -132,3 +135,36 @@ class RunResult:
 
     final_output: str
     completed: bool
+
+
+class AgentHandle(Protocol):
+    """Opaque handle returned by :meth:`AgentBackend.build`.
+
+    Backends are free to use their native agent/session object here.
+    The runner only passes it back into ``run_streamed`` and ``aclose``.
+    """
+
+
+@runtime_checkable
+class AgentBackend(Protocol):
+    """The contract every backend adapter implements."""
+
+    capabilities: BackendCapabilities
+
+    async def build(self, spec: AgentSpec, *, hooks: Any) -> AgentHandle:
+        """Construct a backend-native agent from a neutral spec."""
+        ...
+
+    def run_streamed(
+        self,
+        agent: AgentHandle,
+        prompt: str,
+        *,
+        max_turns: int,
+    ) -> AsyncIterator[StreamEvent]:
+        """Run the agent against *prompt*, yielding neutral stream events."""
+        ...
+
+    async def aclose(self, agent: AgentHandle) -> None:
+        """Release any resources held by *agent*."""
+        ...
