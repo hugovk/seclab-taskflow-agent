@@ -11,6 +11,7 @@ from __future__ import annotations
 
 __all__ = [
     "BackendBadRequestError",
+    "BackendCapabilityError",
     "BackendError",
     "BackendMaxTurnsError",
     "BackendRateLimitError",
@@ -21,6 +22,15 @@ __all__ = [
 
 class BackendError(Exception):
     """Base class for all neutral backend errors."""
+
+
+class BackendCapabilityError(BackendError):
+    """The active backend does not support a requested YAML feature.
+
+    Raised at task materialisation so misconfiguration fails before any
+    network call is made. The message names the offending field and the
+    backend that rejected it.
+    """
 
 
 class BackendTimeoutError(BackendError):

@@ -37,6 +37,7 @@ from .mcp_utils import compress_name, mcp_client_params
 from .models import ModelConfigDocument, PersonalityDocument, TaskDefinition
 from .render_utils import flush_async_output, render_model_output
 from .sdk import AgentSpec, MCPServerSpec, TextDelta, get_backend, resolve_backend_name
+from .sdk.capabilities import assert_supported
 from .sdk.errors import (
     BackendBadRequestError,
     BackendMaxTurnsError,
@@ -302,27 +303,35 @@ async def deploy_task_agents(
                 if tb not in toolboxes:
                     toolboxes.append(tb)
 
-    # Model settings
+    # Resolve which SDK adapter drives this run, then gate the YAML
+    # against its capabilities before building any model settings so a
+    # mis-targeted task fails fast with a clear message.
+    backend_name = resolve_backend_name(explicit=backend, endpoint=endpoint)
+    backend_impl = get_backend(backend_name)
+    caps = backend_impl.capabilities
+    assert_supported(
+        caps,
+        agents_count=len(agents),
+        api_type=api_type,
+        model_settings=model_par,
+        exclude_from_context=exclude_from_context,
+    )
+
+    # Model settings. Defaults are only injected when the backend
+    # supports them; the adapter materialises whatever native settings
+    # object it needs from this plain dict.
     parallel_tool_calls = bool(os.getenv("MODEL_PARALLEL_TOOL_CALLS"))
     model_params: dict[str, Any] = {
         "tool_choice": "auto" if toolboxes else None,
-        "parallel_tool_calls": parallel_tool_calls if toolboxes else None,
     }
-    # Only inject a default temperature for chat_completions; the responses
-    # API rejects unsupported parameters.  MODEL_TEMP env override applies
-    # to both API types.
+    if caps.parallel_tool_calls:
+        model_params["parallel_tool_calls"] = parallel_tool_calls if toolboxes else None
     model_temp = os.getenv("MODEL_TEMP")
-    if model_temp is not None:
+    if model_temp is not None and caps.temperature:
         model_params["temperature"] = model_temp
-    elif api_type != "responses":
+    elif api_type != "responses" and caps.temperature:
         model_params["temperature"] = 0.0
     model_params.update(model_par)
-
-    # Resolve which SDK adapter drives this run. Adapter materialises
-    # ModelSettings internally from the plain dict so runner.py stays
-    # decoupled from openai-agents types.
-    backend_name = resolve_backend_name(explicit=backend, endpoint=endpoint)
-    backend_impl = get_backend(backend_name)
 
     # Build MCP servers and collect server prompts
     entries = build_mcp_servers(available_tools, toolboxes, blocked_tools, headless)
