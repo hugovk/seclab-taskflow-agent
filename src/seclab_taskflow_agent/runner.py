@@ -338,13 +338,28 @@ async def deploy_task_agents(
     mcp_params = mcp_client_params(available_tools, toolboxes)
     server_prompts = [sp for _, (_, _, sp, _) in mcp_params.items()]
 
-    # Wrap each materialised MCP server as an opaque neutral spec; the
-    # openai-agents adapter unwraps `params["_native"]`. Future Copilot
-    # SDK adapter will materialise from neutral params itself.
-    mcp_specs = [
-        MCPServerSpec(name=e.server.name, kind="stdio", params={"_native": e.server})
-        for e in entries
-    ]
+    # Wrap each materialised MCP server as a neutral spec carrying both
+    # the openai-agents-shaped server (under ``_native``) and the raw
+    # client params the Copilot SDK adapter needs to materialise an
+    # MCPServerConfig of its own.
+    mcp_specs: list[MCPServerSpec] = []
+    for entry in entries:
+        tb_name = entry.server.name
+        raw_params, raw_confirms, raw_prompt, raw_timeout = mcp_params.get(
+            tb_name, ({}, [], "", 0.0)
+        )
+        kind = raw_params.get("kind", "stdio")
+        mcp_specs.append(
+            MCPServerSpec(
+                name=tb_name,
+                kind=kind,
+                params={**raw_params, "_native": entry.server},
+                confirms=list(raw_confirms),
+                server_prompt=raw_prompt or "",
+                client_session_timeout=float(raw_timeout or 0.0),
+                reconnecting=bool(raw_params.get("reconnecting", False)),
+            )
+        )
 
     # Connect MCP servers
     servers_connected = asyncio.Event()
@@ -390,6 +405,8 @@ async def deploy_task_agents(
                     endpoint=endpoint,
                     token_env=token,
                     in_handoff_graph=has_handoffs,
+                    blocked_tools=blocked_tools,
+                    headless=headless,
                 )
             )
 
@@ -412,6 +429,8 @@ async def deploy_task_agents(
             endpoint=endpoint,
             token_env=token,
             in_handoff_graph=has_handoffs,
+            blocked_tools=blocked_tools,
+            headless=headless,
         )
         agent_handle = await backend_impl.build(
             primary_spec, run_hooks=run_hooks, agent_hooks=agent_hooks

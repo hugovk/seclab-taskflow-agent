@@ -100,8 +100,12 @@ def test_resolve_auto_default_copilot_endpoint():
     assert sdk.resolve_backend_name(endpoint="https://api.githubcopilot.com/") == "copilot_sdk"
 
 
-def test_resolve_auto_default_without_copilot_registered():
+def test_resolve_auto_default_without_copilot_registered(monkeypatch):
     sdk.register_backend_capabilities(_OPENAI_CAPS)
+    # Simulate the copilot adapter module being absent (optional dep
+    # not installed): drop it from the autoload map so the resolver
+    # cannot register it on demand.
+    monkeypatch.setitem(sdk._BACKEND_MODULES, "copilot_sdk", "seclab_taskflow_agent._missing")
     # Copilot endpoint but SDK adapter never registered → stay on openai_agents.
     assert sdk.resolve_backend_name(endpoint="https://api.githubcopilot.com") == "openai_agents"
 
@@ -111,8 +115,9 @@ def test_resolve_default_is_openai_agents():
     assert sdk.resolve_backend_name() == "openai_agents"
 
 
-def test_resolve_unknown_candidate_raises():
+def test_resolve_unknown_candidate_raises(monkeypatch):
     sdk.register_backend_capabilities(_OPENAI_CAPS)
+    monkeypatch.setitem(sdk._BACKEND_MODULES, "copilot_sdk", "seclab_taskflow_agent._missing")
     with pytest.raises(ValueError, match="not available"):
         sdk.resolve_backend_name(explicit="copilot_sdk")
 

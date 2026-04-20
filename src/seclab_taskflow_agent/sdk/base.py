@@ -105,6 +105,15 @@ class AgentSpec:
     # prompt scaffolding (openai-agents prepends handoff instructions to
     # every participant, including the handoff targets themselves).
     in_handoff_graph: bool = False
+    # Tool names the user wants disabled for this agent. The
+    # openai-agents backend pre-filters at MCP-server build time and
+    # ignores this field; the Copilot SDK adapter forwards the list as
+    # ``excluded_tools`` to ``create_session``.
+    blocked_tools: list[str] = field(default_factory=list)
+    # When True, interactive permission prompts must auto-approve
+    # instead of blocking on user input. The Copilot SDK adapter wires
+    # this into the ``on_permission_request`` callback.
+    headless: bool = False
 
 
 @dataclass(frozen=True)
