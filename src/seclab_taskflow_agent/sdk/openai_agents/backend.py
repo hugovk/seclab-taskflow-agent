@@ -79,6 +79,7 @@ class OpenAIAgentsBackend:
         # Imported lazily to avoid importing agent.py (and thus the
         # OpenAI client wiring) when only the registry surface is used.
         from agents.agent import ModelSettings
+        from agents.extensions.handoff_prompt import prompt_with_handoff_instructions
 
         from ...agent import TaskAgent
 
@@ -87,9 +88,12 @@ class OpenAIAgentsBackend:
             (await self.build(h, run_hooks=run_hooks, agent_hooks=agent_hooks)).agent  # type: ignore[attr-defined]
             for h in spec.handoffs
         ]
+        instructions = (
+            prompt_with_handoff_instructions(spec.instructions) if spec.in_handoff_graph else spec.instructions
+        )
         return TaskAgent(
             name=spec.name,
-            instructions=spec.instructions,
+            instructions=instructions,
             handoffs=handoffs,
             exclude_from_context=spec.exclude_from_context,
             mcp_servers=mcp_servers,

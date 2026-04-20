@@ -214,6 +214,60 @@ def test_build_constructs_taskagent(monkeypatch, backend):
     assert captured["endpoint"] == "https://example.test"
     assert captured["handoffs"] == []
     assert captured["mcp_servers"] == []
+    # No handoff graph participation → instructions passed through verbatim.
+    assert captured["instructions"] == "inst"
     # model_settings is translated to ModelSettings(...) — just check it's non-None
     assert captured["model_settings"] is not None
     assert isinstance(result, _FakeTaskAgent)
+
+
+def test_build_applies_handoff_prompt_when_flagged(monkeypatch, backend):
+    """in_handoff_graph=True triggers prompt_with_handoff_instructions()."""
+    captured: dict = {}
+
+    class _FakeTaskAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.agent = object()
+
+    from seclab_taskflow_agent import agent as agent_mod
+
+    monkeypatch.setattr(agent_mod, "TaskAgent", _FakeTaskAgent)
+
+    spec = AgentSpec(
+        name="primary",
+        instructions="BASE_INSTRUCTIONS",
+        model="gpt-5",
+        in_handoff_graph=True,
+    )
+    asyncio.run(backend.build(spec))
+    # The wrapped instructions must contain the original text and must
+    # be strictly longer (the openai-agents prefix adds handoff guidance).
+    assert "BASE_INSTRUCTIONS" in captured["instructions"]
+    assert len(captured["instructions"]) > len("BASE_INSTRUCTIONS")
+
+
+def test_build_recurses_into_handoffs(monkeypatch, backend):
+    """Handoff sub-specs are materialised via nested build() calls."""
+    built: list[str] = []
+
+    class _FakeTaskAgent:
+        def __init__(self, **kwargs):
+            built.append(kwargs["name"])
+            self.agent = f"agent-{kwargs['name']}"
+
+    from seclab_taskflow_agent import agent as agent_mod
+
+    monkeypatch.setattr(agent_mod, "TaskAgent", _FakeTaskAgent)
+
+    handoff = AgentSpec(name="sub", instructions="s", model="m", in_handoff_graph=True)
+    primary = AgentSpec(
+        name="main",
+        instructions="p",
+        model="m",
+        handoffs=[handoff],
+        in_handoff_graph=True,
+    )
+    asyncio.run(backend.build(primary))
+    # Handoffs are constructed before the primary agent.
+    assert built == ["sub", "main"]

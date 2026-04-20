@@ -32,6 +32,8 @@ __all__ = [
     "resolve_backend_name",
 ]
 
+import contextlib
+import importlib
 import os
 from typing import get_args
 
@@ -54,6 +56,23 @@ _ENV_VAR = "SECLAB_TASKFLOW_BACKEND"
 
 _CAPABILITIES: dict[str, BackendCapabilities] = {}
 _BACKENDS: dict[str, AgentBackend] = {}
+
+# Module path each backend name auto-imports on demand. Importing the
+# module is expected to register the adapter via ``register_backend``.
+_BACKEND_MODULES: dict[str, str] = {
+    "openai_agents": "seclab_taskflow_agent.sdk.openai_agents",
+    "copilot_sdk": "seclab_taskflow_agent.sdk.copilot_sdk",
+}
+
+
+def _autoload_backend(name: str) -> None:
+    module_path = _BACKEND_MODULES.get(name)
+    if module_path is None:
+        return
+    # Adapter's optional dependencies may not be installed; the caller
+    # will surface a clear error via get_backend()/resolve_backend_name.
+    with contextlib.suppress(ImportError):
+        importlib.import_module(module_path)
 
 
 def register_backend_capabilities(caps: BackendCapabilities) -> None:
@@ -81,7 +100,13 @@ def register_backend(backend: AgentBackend) -> None:
 
 
 def get_backend(name: str) -> AgentBackend:
-    """Return the backend adapter instance registered for *name*."""
+    """Return the backend adapter instance registered for *name*.
+
+    Adapters are imported on demand: the first call for a given name
+    imports the adapter module (which registers itself on import).
+    """
+    if name not in _BACKENDS:
+        _autoload_backend(name)
     try:
         return _BACKENDS[name]
     except KeyError as exc:
@@ -124,6 +149,8 @@ def resolve_backend_name(
     """
     candidate = explicit or os.getenv(_ENV_VAR) or _auto_default(endpoint)
     if candidate not in _CAPABILITIES:
+        _autoload_backend(candidate)
+    if candidate not in _CAPABILITIES:
         raise ValueError(
             f"Backend {candidate!r} is not available. "
             f"Known backends: {available_backends()}"
@@ -132,6 +159,8 @@ def resolve_backend_name(
 
 
 def _auto_default(endpoint: str | None) -> str:
-    if endpoint and "api.githubcopilot.com" in endpoint and "copilot_sdk" in _CAPABILITIES:
-        return "copilot_sdk"
+    if endpoint and "api.githubcopilot.com" in endpoint:
+        _autoload_backend("copilot_sdk")
+        if "copilot_sdk" in _CAPABILITIES:
+            return "copilot_sdk"
     return "openai_agents"

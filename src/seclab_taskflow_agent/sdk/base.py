@@ -100,6 +100,11 @@ class AgentSpec:
     api_type: str | None = None
     endpoint: str | None = None
     token_env: str | None = None
+    # Set to True when this agent participates in a multi-personality
+    # handoff graph. Adapters may use it to apply backend-specific
+    # prompt scaffolding (openai-agents prepends handoff instructions to
+    # every participant, including the handoff targets themselves).
+    in_handoff_graph: bool = False
 
 
 @dataclass(frozen=True)

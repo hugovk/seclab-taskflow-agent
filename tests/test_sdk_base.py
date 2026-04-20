@@ -172,7 +172,19 @@ def test_register_backend_also_registers_capabilities():
 
 def test_get_backend_unknown_raises():
     with pytest.raises(ValueError, match="not registered"):
-        sdk.get_backend("openai_agents")
+        sdk.get_backend("nonexistent_backend")
+
+
+def test_get_backend_autoloads_adapter_module():
+    """get_backend imports the adapter module on demand so callers don't
+    have to remember to import sdk.openai_agents themselves."""
+    # The fixture wipes the in-memory registry each test, but the module
+    # cache still has the prior import. Re-register by triggering the
+    # autoload path through resolve_backend_name → get_backend.
+    import importlib
+    import seclab_taskflow_agent.sdk.openai_agents as adapter
+    importlib.reload(adapter)  # re-runs register_backend()
+    assert sdk.get_backend("openai_agents") is not None
 
 
 def test_fake_backend_satisfies_protocol():
