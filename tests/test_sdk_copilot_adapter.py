@@ -53,7 +53,6 @@ def test_validate_accepts_minimal_spec():
     ("kwargs", "field"),
     [
         ({"in_handoff_graph": True}, "handoffs"),
-        ({"exclude_from_context": True}, "exclude_from_context"),
         ({"model_settings": {"temperature": 0.0}}, "temperature"),
         ({"model_settings": {"parallel_tool_calls": True}}, "parallel_tool_calls"),
     ],
@@ -62,6 +61,10 @@ def test_validate_rejects_unsupported(kwargs, field):
     backend = CopilotSDKBackend()
     with pytest.raises(BackendCapabilityError, match=field):
         backend.validate(_spec(**kwargs))
+
+
+def test_validate_accepts_exclude_from_context():
+    CopilotSDKBackend().validate(_spec(exclude_from_context=True))
 
 
 def test_validate_rejects_handoff_targets():
@@ -116,6 +119,81 @@ def test_run_streamed_session_error_raises():
 
     with pytest.raises(BackendUnexpectedError, match="boom"):
         asyncio.run(_run())
+
+
+def test_run_streamed_aborts_after_tool_when_excluded():
+    aborted: list[bool] = []
+
+    class _AbortableSession(_FakeSession):
+        async def abort(self) -> None:
+            aborted.append(True)
+
+    async def _run():
+        session = _AbortableSession()
+        queue: asyncio.Queue[Any] = asyncio.Queue()
+        result = SimpleNamespace(
+            contents=[SimpleNamespace(text="tool-out")], content=None
+        )
+        for ev in (
+            _Event(
+                SessionEventType.TOOL_EXECUTION_COMPLETE,
+                SimpleNamespace(success=True, result=result, tool_name="echo"),
+            ),
+            # idle should NOT be reached because exclude_from_context aborts
+            _Event(
+                SessionEventType.ASSISTANT_MESSAGE_DELTA,
+                SimpleNamespace(delta_content="should-not-see"),
+            ),
+            _Event(SessionEventType.SESSION_IDLE),
+        ):
+            queue.put_nowait(ev)
+        handle = SimpleNamespace(
+            client=None,
+            session=session,
+            event_queue=queue,
+            exclude_from_context=True,
+        )
+        return [
+            ev async for ev in CopilotSDKBackend().run_streamed(handle, "go", max_turns=10)
+        ]
+
+    out = asyncio.run(_run())
+    assert aborted == [True]
+    # Only the ToolEnd is emitted; the trailing delta is not consumed.
+    assert len(out) == 1
+    assert out[0].text == "tool-out"
+
+
+def test_run_streamed_keeps_running_when_exclude_disabled():
+    async def _run():
+        queue: asyncio.Queue[Any] = asyncio.Queue()
+        result = SimpleNamespace(
+            contents=[SimpleNamespace(text="tool-out")], content=None
+        )
+        for ev in (
+            _Event(
+                SessionEventType.TOOL_EXECUTION_COMPLETE,
+                SimpleNamespace(success=True, result=result, tool_name="echo"),
+            ),
+            _Event(
+                SessionEventType.ASSISTANT_MESSAGE_DELTA,
+                SimpleNamespace(delta_content="post-tool"),
+            ),
+            _Event(SessionEventType.SESSION_IDLE),
+        ):
+            queue.put_nowait(ev)
+        handle = SimpleNamespace(
+            client=None,
+            session=_FakeSession(),
+            event_queue=queue,
+            exclude_from_context=False,
+        )
+        return [
+            ev async for ev in CopilotSDKBackend().run_streamed(handle, "go", max_turns=10)
+        ]
+
+    out = asyncio.run(_run())
+    assert [type(e).__name__ for e in out] == ["ToolEnd", "TextDelta"]
 
 
 def test_invalid_reasoning_effort_rejected():

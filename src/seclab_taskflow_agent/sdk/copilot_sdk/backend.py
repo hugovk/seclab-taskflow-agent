@@ -37,6 +37,7 @@ class _CopilotHandle:
     client: Any
     session: Any
     event_queue: asyncio.Queue[Any]
+    exclude_from_context: bool = False
 
 
 def _resolve_token(token_env: str | None) -> str | None:
@@ -93,20 +94,14 @@ class CopilotSDKBackend:
     def validate(self, spec: AgentSpec) -> None:
         """Reject YAML fields the Copilot SDK cannot honour.
 
-        The SDK has no concept of agent-to-agent handoffs, no
+        The SDK has no concept of agent-to-agent handoffs and no
         ``parallel_tool_calls`` or ``temperature`` knob on the
-        underlying client, and no equivalent of openai-agents'
-        ``exclude_from_context`` tool-output suppression. ``api_type``
-        is silently ignored — Copilot picks its own wire protocol per
-        model.
+        underlying client. ``api_type`` is silently ignored — Copilot
+        picks its own wire protocol per model.
         """
         if spec.handoffs or spec.in_handoff_graph:
             raise BackendCapabilityError(
                 "copilot_sdk: agent handoffs are not supported"
-            )
-        if spec.exclude_from_context:
-            raise BackendCapabilityError(
-                "copilot_sdk: exclude_from_context is not supported"
             )
         for unsupported in ("temperature", "parallel_tool_calls"):
             if unsupported in spec.model_settings:
@@ -159,7 +154,12 @@ class CopilotSDKBackend:
             await client.stop()
             raise
 
-        return _CopilotHandle(client=client, session=session, event_queue=event_queue)
+        return _CopilotHandle(
+            client=client,
+            session=session,
+            event_queue=event_queue,
+            exclude_from_context=spec.exclude_from_context,
+        )
 
     async def run_streamed(
         self,
@@ -190,6 +190,14 @@ class CopilotSDKBackend:
                             tool_name=getattr(data, "tool_name", "") or "",
                             text=text,
                         )
+                    # exclude_from_context parity with openai-agents'
+                    # ToolsToFinalOutputFunction: stop the session after
+                    # the first successful tool call so the model never
+                    # sees the result fed back into its context.
+                    if agent.exclude_from_context:
+                        with contextlib.suppress(Exception):
+                            await agent.session.abort()
+                        return
             elif etype == SessionEventType.SESSION_ERROR:
                 raise BackendUnexpectedError(
                     getattr(data, "message", None) or "copilot_sdk session error"
