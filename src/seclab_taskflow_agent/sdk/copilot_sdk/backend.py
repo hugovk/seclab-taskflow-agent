@@ -179,6 +179,8 @@ class CopilotSDKBackend:
                 return
 
     async def aclose(self, agent: _CopilotHandle) -> None:
+        if agent is None:
+            return
         try:
             await agent.session.disconnect()
         except Exception:
