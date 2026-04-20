@@ -11,11 +11,12 @@ __all__ = [
     "MCPServerSpec",
     "StreamEvent",
     "TextDelta",
+    "ToolEnd",
 ]
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Protocol, Union
 
 
 @dataclass(frozen=True)
@@ -25,8 +26,15 @@ class TextDelta:
     text: str
 
 
-# Reserved as a union for future event types (tool calls, handoffs, …).
-StreamEvent = TextDelta
+@dataclass(frozen=True)
+class ToolEnd:
+    """A tool call has completed; ``text`` is the raw tool result."""
+
+    tool_name: str
+    text: str
+
+
+StreamEvent = Union[TextDelta, ToolEnd]
 
 
 @dataclass(frozen=True)

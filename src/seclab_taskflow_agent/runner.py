@@ -23,6 +23,7 @@ import asyncio
 import json
 import logging
 import uuid
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 import jinja2
@@ -35,7 +36,7 @@ from .mcp_prompt import mcp_system_prompt
 from .mcp_utils import compress_name, mcp_client_params
 from .models import ModelConfigDocument, PersonalityDocument, TaskDefinition
 from .render_utils import flush_async_output, render_model_output
-from .sdk import AgentSpec, MCPServerSpec, TextDelta, get_backend, resolve_backend_name
+from .sdk import AgentSpec, MCPServerSpec, TextDelta, ToolEnd, get_backend, resolve_backend_name
 from .sdk.errors import (
     BackendBadRequestError,
     BackendMaxTurnsError,
@@ -425,6 +426,22 @@ async def deploy_task_agents(
                                 await render_model_output(
                                     event.text, async_task=async_task, task_id=task_id
                                 )
+                            elif isinstance(event, ToolEnd):
+                                # Bridge tool events from adapters that surface
+                                # them (Copilot SDK) into the same hook the
+                                # openai-agents path uses, so repeat_prompt and
+                                # session checkpointing see tool output. The
+                                # runner expects each captured result to be a
+                                # JSON-serialised ``{"text": ...}`` envelope,
+                                # mirroring openai-agents' MCP TextContent
+                                # serialisation.
+                                fake_tool = SimpleNamespace(name=event.tool_name)
+                                payload = json.dumps({"text": event.text})
+                                if run_hooks is not None:
+                                    await run_hooks.on_tool_start(None, None, fake_tool)
+                                    await run_hooks.on_tool_end(
+                                        None, None, fake_tool, payload
+                                    )
                         await render_model_output("\n\n", async_task=async_task, task_id=task_id)
                         return
                     except BackendTimeoutError:

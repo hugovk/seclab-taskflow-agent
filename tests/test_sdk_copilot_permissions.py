@@ -35,10 +35,14 @@ def test_headless_approves_unblocked_tool():
     assert result.kind == "approved"
 
 
-def test_non_headless_returns_no_approval_rule():
+def test_non_headless_still_approves_unblocked_tool():
+    # The Copilot SDK requires a permission verdict; the runner has no
+    # interactive TTY, so any non-blocked tool is approved regardless of
+    # the YAML ``headless`` flag (the openai-agents path has the same
+    # effective behaviour).
     handler = build_permission_handler([], headless=False)
     result = handler(_Req(tool_name="safe"), {})
-    assert result.kind == "denied-no-approval-rule-and-could-not-request-from-user"
+    assert result.kind == "approved"
 
 
 def test_block_matches_command_text_when_tool_name_missing():

@@ -24,7 +24,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
-from ..base import AgentSpec, StreamEvent, TextDelta
+from ..base import AgentSpec, StreamEvent, TextDelta, ToolEnd
 from ..errors import BackendBadRequestError, BackendCapabilityError, BackendUnexpectedError
 from .mcp import build_mcp_config
 from .permissions import build_permission_handler
@@ -52,6 +52,25 @@ def _normalize_model(model: str) -> str:
     is a CAPI inference convention used by the openai-agents path.
     """
     return model.split("/", 1)[1] if "/" in model else model
+
+
+def _tool_result_text(data: Any) -> str | None:
+    """Extract the textual payload from a ``TOOL_EXECUTION_COMPLETE`` event.
+
+    The Copilot SDK delivers MCP tool results as a ``Result`` object with a
+    list of ``ContentElement`` entries. We concatenate the ``text`` fields
+    of the text elements, mirroring how openai-agents stringifies an MCP
+    text content list before handing it to the runner's tool-end hook.
+    """
+    result = getattr(data, "result", None)
+    if result is None:
+        return None
+    contents = getattr(result, "contents", None) or []
+    parts = [getattr(c, "text", "") for c in contents if getattr(c, "text", None)]
+    if parts:
+        return "".join(parts)
+    content = getattr(result, "content", None)
+    return content if isinstance(content, str) else None
 
 
 def _reasoning_effort(model_settings: dict[str, Any]) -> str | None:
@@ -163,6 +182,14 @@ class CopilotSDKBackend:
                 text = getattr(data, "delta_content", None) or ""
                 if text:
                     yield TextDelta(text=text)
+            elif etype == SessionEventType.TOOL_EXECUTION_COMPLETE:
+                if getattr(data, "success", False):
+                    text = _tool_result_text(data)
+                    if text is not None:
+                        yield ToolEnd(
+                            tool_name=getattr(data, "tool_name", "") or "",
+                            text=text,
+                        )
             elif etype == SessionEventType.SESSION_ERROR:
                 raise BackendUnexpectedError(
                     getattr(data, "message", None) or "copilot_sdk session error"

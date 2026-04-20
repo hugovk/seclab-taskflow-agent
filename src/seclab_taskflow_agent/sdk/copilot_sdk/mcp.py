@@ -7,9 +7,25 @@ from __future__ import annotations
 
 __all__ = ["build_mcp_config"]
 
+import os
+import shutil
 from typing import Any
 
 from ..base import MCPServerSpec
+
+
+def _resolve_command(command: str) -> str:
+    """Return an absolute path for *command*.
+
+    The Copilot SDK spawns MCP servers in a fresh subprocess that does not
+    inherit our active virtualenv, so a bare ``python`` resolves to the
+    system interpreter and the toolbox import fails. Resolving against the
+    runner's ``PATH`` (which has the venv prepended) gives the SDK an
+    absolute path that points at the correct interpreter.
+    """
+    if not command or os.path.isabs(command):
+        return command
+    return shutil.which(command) or command
 
 
 def _timeout_ms(params: dict[str, Any]) -> int | None:
@@ -21,14 +37,17 @@ def _stdio_config(spec: MCPServerSpec) -> dict[str, Any]:
     p = spec.params
     config: dict[str, Any] = {
         "type": "stdio",
-        "command": p.get("command", ""),
+        "command": _resolve_command(p.get("command", "")),
         "args": list(p.get("args") or []),
         "tools": ["*"],  # session-level excluded_tools handles filtering
     }
     if p.get("env"):
         config["env"] = dict(p["env"])
-    if p.get("cwd"):
-        config["cwd"] = p["cwd"]
+    # The Copilot SDK does not inherit the runner's cwd by default, which
+    # breaks toolboxes that resolve state directories from relative paths
+    # (e.g. ``MEMCACHE_STATE_DIR=example_taskflow/``). Pin to the current
+    # process directory unless the toolbox specifies one explicitly.
+    config["cwd"] = p.get("cwd") or os.getcwd()
     timeout = _timeout_ms(p)
     if timeout:
         config["timeout"] = timeout

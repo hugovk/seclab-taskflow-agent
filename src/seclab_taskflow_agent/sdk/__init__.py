@@ -16,6 +16,7 @@ __all__ = [
     "MCPServerSpec",
     "StreamEvent",
     "TextDelta",
+    "ToolEnd",
     "get_backend",
     "resolve_backend_name",
 ]
@@ -29,6 +30,7 @@ from .base import (
     MCPServerSpec,
     StreamEvent,
     TextDelta,
+    ToolEnd,
 )
 
 _ENV_VAR = "SECLAB_TASKFLOW_BACKEND"

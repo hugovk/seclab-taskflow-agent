@@ -77,7 +77,36 @@ def test_streamable_spec_without_url_is_skipped():
 
 
 def test_stdio_minimal_defaults():
+    import os
+
     specs = [MCPServerSpec(name="m", kind="stdio", params={"command": "x"})]
     assert build_mcp_config(specs) == {
-        "m": {"type": "stdio", "command": "x", "args": [], "tools": ["*"]}
+        "m": {
+            "type": "stdio",
+            "command": "x",
+            "args": [],
+            "tools": ["*"],
+            "cwd": os.getcwd(),
+        }
     }
+
+
+def test_stdio_resolves_bare_command_via_path(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "fakecmd"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    specs = [MCPServerSpec(name="m", kind="stdio", params={"command": "fakecmd"})]
+    out = build_mcp_config(specs)
+    assert out["m"]["command"] == str(fake)
+
+
+def test_stdio_explicit_cwd_preserved():
+    specs = [
+        MCPServerSpec(
+            name="m", kind="stdio", params={"command": "/usr/bin/x", "cwd": "/tmp"}
+        )
+    ]
+    assert build_mcp_config(specs)["m"]["cwd"] == "/tmp"

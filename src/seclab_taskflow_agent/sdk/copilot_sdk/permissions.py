@@ -40,6 +40,7 @@ def build_permission_handler(
     # can import this module without the SDK installed.
     from copilot.session import PermissionRequestResult
 
+    del headless  # taskflow policy is `blocked_tools`; the runner has no TTY
     blocked = set(blocked_tools)
 
     def _handler(request: Any, _invocation: dict[str, str]) -> Any:
@@ -49,14 +50,6 @@ def build_permission_handler(
                 kind="denied-by-rules",
                 message=f"Tool {tool_id!r} is blocked by taskflow configuration",
             )
-        if headless:
-            return PermissionRequestResult(kind="approved")
-        return PermissionRequestResult(
-            kind="denied-no-approval-rule-and-could-not-request-from-user",
-            message=(
-                "Interactive permission prompts are not enabled for this taskflow; "
-                "set headless=true or extend blocked_tools to silence this."
-            ),
-        )
+        return PermissionRequestResult(kind="approved")
 
     return _handler
