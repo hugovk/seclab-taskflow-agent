@@ -4,15 +4,12 @@
 """Permission handling for the Copilot SDK backend.
 
 The Copilot SDK requires every session to provide an
-``on_permission_request`` callback. The adapter implements two YAML
-primitives the runner already exposes:
-
-* ``blocked_tools`` denies the request when the offending tool name
-  matches.
-* ``headless`` auto-approves anything not explicitly blocked. When
-  headless is False and no rule matched, the SDK is told no approval
-  rule was found so the operator gets a clear failure rather than a
-  silent hang. Wiring an interactive TTY prompt is left for a follow-up.
+``on_permission_request`` callback. The taskflow YAML exposes a single
+policy knob, ``blocked_tools``: any tool whose name (or canonicalised
+command/path/url) appears in that list is denied; everything else is
+approved. The ``headless`` flag is accepted for signature parity with
+the openai-agents path but is unused — the runner never has a TTY, so
+there is no interactive fallback to prompt for.
 """
 
 from __future__ import annotations
@@ -40,7 +37,7 @@ def build_permission_handler(
     # can import this module without the SDK installed.
     from copilot.session import PermissionRequestResult
 
-    del headless  # taskflow policy is `blocked_tools`; the runner has no TTY
+    del headless  # see module docstring
     blocked = set(blocked_tools)
 
     def _handler(request: Any, _invocation: dict[str, str]) -> Any:

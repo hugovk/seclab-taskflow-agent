@@ -21,6 +21,7 @@ from seclab_taskflow_agent.sdk.base import AgentSpec, MCPServerSpec, TextDelta
 from seclab_taskflow_agent.sdk.copilot_sdk.backend import (
     CopilotSDKBackend,
     _reasoning_effort,
+    _normalize_model,
 )
 from seclab_taskflow_agent.sdk.errors import (
     BackendBadRequestError,
@@ -199,6 +200,19 @@ def test_run_streamed_keeps_running_when_exclude_disabled():
 def test_invalid_reasoning_effort_rejected():
     with pytest.raises(BackendBadRequestError, match="reasoning_effort"):
         _reasoning_effort({"reasoning_effort": "ludicrous"})
+
+
+def test_normalize_model_rejects_empty():
+    # Passing an empty model would let the SDK silently fall back to its
+    # built-in default, which would invalidate any reproducibility
+    # guarantee a taskflow makes about the model under test.
+    with pytest.raises(BackendBadRequestError, match="model is required"):
+        _normalize_model("")
+
+
+def test_normalize_model_strips_provider_prefix():
+    assert _normalize_model("openai/gpt-4.1") == "gpt-4.1"
+    assert _normalize_model("gpt-4.1") == "gpt-4.1"
 
 
 def test_aclose_handles_none():

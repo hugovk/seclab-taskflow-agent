@@ -47,11 +47,22 @@ def _resolve_token(token_env: str | None) -> str | None:
 
 
 def _normalize_model(model: str) -> str:
-    """Strip provider prefix (e.g. ``openai/gpt-4.1`` → ``gpt-4.1``).
+    """Strip the provider prefix (``openai/gpt-4.1`` → ``gpt-4.1``).
 
-    The Copilot SDK selects models by bare name; the provider-prefixed form
-    is a CAPI inference convention used by the openai-agents path.
+    The Copilot SDK selects models by bare name; the provider-prefixed
+    form is a CAPI inference convention used by the openai-agents path.
+
+    Raises:
+        BackendBadRequestError: If *model* is empty. The Copilot SDK
+            silently falls back to its built-in default model when no
+            ``model`` is passed to ``create_session``, which would
+            invalidate any reproducibility guarantee a taskflow makes
+            about the model under test.
     """
+    if not model:
+        raise BackendBadRequestError(
+            "copilot_sdk: model is required (the SDK would otherwise pick a default)"
+        )
     return model.split("/", 1)[1] if "/" in model else model
 
 
@@ -94,10 +105,25 @@ class CopilotSDKBackend:
     def validate(self, spec: AgentSpec) -> None:
         """Reject YAML fields the Copilot SDK cannot honour.
 
-        The SDK has no concept of agent-to-agent handoffs and no
-        ``parallel_tool_calls`` or ``temperature`` knob on the
-        underlying client. ``api_type`` is silently ignored — Copilot
-        picks its own wire protocol per model.
+        Handoffs:
+            The openai-agents handoff model is "the LLM picks the next
+            agent via a tool call, the SDK swaps instructions+tools+
+            model in place." The Copilot SDK lets you preregister
+            personas via ``custom_agents`` and pick one at session
+            start, but exposes no API to switch the active persona
+            mid-session — ``system_message`` is only accepted by
+            ``create_session`` and ``set_model`` only swaps the model.
+            We could fake it by destroying and recreating the session
+            with replayed history, but that breaks tool-call state and
+            depends on undocumented behaviour. Reject up front instead.
+
+        Model settings:
+            ``temperature`` and ``parallel_tool_calls`` have no analogue
+            in ``CopilotClient.create_session``; silently dropping them
+            would mask configuration drift.
+
+        ``api_type`` is intentionally ignored — Copilot picks its own
+        wire protocol per model.
         """
         if spec.handoffs or spec.in_handoff_graph:
             raise BackendCapabilityError(
@@ -148,6 +174,14 @@ class CopilotSDKBackend:
                     if spec.instructions
                     else None
                 ),
+                # Pin everything that could otherwise be silently changed
+                # by user-level configuration: no on-disk config discovery,
+                # no built-in custom agents, no skill auto-loading. The
+                # taskflow YAML is the single source of truth.
+                enable_config_discovery=False,
+                custom_agents=None,
+                agent=None,
+                skill_directories=[],
                 on_event=_on_event,
             )
         except Exception:
