@@ -93,10 +93,10 @@ The runner can drive two SDKs behind a common interface:
   — the GitHub Copilot Python SDK. Supports streaming, `reasoning_effort`,
   MCP over stdio/SSE/HTTP, and per-tool permission gating. The SDK
   selects its own wire protocol per model, so the YAML `api_type` field
-  is not honoured; multi-personality handoffs, `temperature`,
-  `parallel_tool_calls`, and `exclude_from_context` are likewise not
-  available. Taskflows that use unsupported fields fail at load time
-  with a `BackendCapabilityError` naming the offending field.
+  is not honoured; multi-personality handoffs, `temperature`, and
+  `parallel_tool_calls` are likewise not available. Taskflows that use
+  unsupported fields fail at load time with a `BackendCapabilityError`
+  naming the offending field.
 
 Selection precedence:
 
