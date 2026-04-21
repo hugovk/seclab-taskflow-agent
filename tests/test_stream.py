@@ -37,7 +37,8 @@ class _RecordingHooks:
 def test_bridge_emits_envelope_and_name():
     hooks = _RecordingHooks()
     asyncio.run(bridge_copilot_tool_event(ToolEnd(tool_name="echo", text="hi"), hooks))
-    assert len(hooks.starts) == 1 and hooks.starts[0][2].name == "echo"
+    assert len(hooks.starts) == 1
+    assert hooks.starts[0][2].name == "echo"
     assert len(hooks.ends) == 1
     _, _, tool, payload = hooks.ends[0]
     assert tool.name == "echo"
@@ -93,13 +94,14 @@ def test_drive_renders_text_and_forwards_tool_event(monkeypatch):
     _drive(backend, hooks)
 
     assert "hi" in rendered
-    assert hooks.ends and json.loads(hooks.ends[0][3]) == {"text": "r"}
+    assert hooks.ends
+    assert json.loads(hooks.ends[0][3]) == {"text": "r"}
 
 
 def test_drive_retries_then_succeeds_on_timeout(monkeypatch):
     monkeypatch.setattr(
         "seclab_taskflow_agent._stream.render_model_output",
-        lambda *a, **kw: _noop(),
+        lambda *_a, **_kw: _noop(),
     )
     backend = _ScriptedBackend([BackendTimeoutError("once"), [TextDelta(text="ok")]])
     _drive(backend, max_api_retry=2)
@@ -109,7 +111,7 @@ def test_drive_retries_then_succeeds_on_timeout(monkeypatch):
 def test_drive_raises_after_retries_exhausted(monkeypatch):
     monkeypatch.setattr(
         "seclab_taskflow_agent._stream.render_model_output",
-        lambda *a, **kw: _noop(),
+        lambda *_a, **_kw: _noop(),
     )
     backend = _ScriptedBackend([BackendTimeoutError("a"), BackendTimeoutError("b")])
     with pytest.raises(BackendTimeoutError):
@@ -119,7 +121,7 @@ def test_drive_raises_after_retries_exhausted(monkeypatch):
 def test_drive_caps_rate_limit_backoff(monkeypatch):
     monkeypatch.setattr(
         "seclab_taskflow_agent._stream.render_model_output",
-        lambda *a, **kw: _noop(),
+        lambda *_a, **_kw: _noop(),
     )
     sleeps: list[float] = []
 
@@ -135,7 +137,8 @@ def test_drive_caps_rate_limit_backoff(monkeypatch):
         ]
     )
     _drive(backend, initial_rate_limit_backoff=1, max_rate_limit_backoff=4)
-    assert sleeps and all(s <= 4 for s in sleeps)
+    assert sleeps
+    assert all(s <= 4 for s in sleeps)
 
 
 async def _noop() -> None:
@@ -156,7 +159,7 @@ class _HangingBackend:
 def test_drive_raises_on_stream_idle_timeout(monkeypatch):
     monkeypatch.setattr(
         "seclab_taskflow_agent._stream.render_model_output",
-        lambda *a, **kw: _noop(),
+        lambda *_a, **_kw: _noop(),
     )
     # Force a tiny idle timeout so the test runs quickly.
     monkeypatch.setattr("seclab_taskflow_agent._stream.STREAM_IDLE_TIMEOUT", 0.05)
@@ -182,7 +185,7 @@ def test_drive_raises_on_stream_idle_timeout(monkeypatch):
 def test_drive_pings_watchdog_per_event(monkeypatch):
     monkeypatch.setattr(
         "seclab_taskflow_agent._stream.render_model_output",
-        lambda *a, **kw: _noop(),
+        lambda *_a, **_kw: _noop(),
     )
     pings: list[int] = []
     monkeypatch.setattr(

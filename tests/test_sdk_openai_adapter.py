@@ -203,7 +203,8 @@ def test_run_streamed_cancels_underlying_result(monkeypatch, backend):
             return res
 
     _collect(backend.run_streamed(_CapturingAgent(), "p", max_turns=1))
-    assert captured and captured[0].cancel_called is True
+    assert captured
+    assert captured[0].cancel_called is True
 
 
 def test_aclose_closes_taskagent_client(backend):

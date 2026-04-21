@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import time
 
+import pytest
+
 from seclab_taskflow_agent import _watchdog
 
 
@@ -38,8 +40,7 @@ def test_watchdog_loop_force_exits_when_idle(monkeypatch):
     # Simulate a stale timestamp so the first iteration decides to exit.
     monkeypatch.setattr(_watchdog, "_last_activity", time.monotonic() - 10_000)
 
-    try:
+    with pytest.raises(SystemExit) as excinfo:
         _watchdog._watchdog_loop(timeout=1)
-    except SystemExit as exc:
-        assert exc.code == 2
+    assert excinfo.value.code == 2
     assert exits == [2]

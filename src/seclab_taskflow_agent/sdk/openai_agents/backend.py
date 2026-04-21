@@ -54,8 +54,8 @@ class OpenAIAgentsBackend:
     name = "openai_agents"
 
     def validate(self, spec: AgentSpec) -> None:
-        # The openai-agents adapter supports every YAML field this
-        # runner exposes, so there's nothing to reject up front.
+        # openai-agents accepts every field the YAML grammar exposes,
+        # so there's nothing to reject up front.
         del spec
 
     async def build(

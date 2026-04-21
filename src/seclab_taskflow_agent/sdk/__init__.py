@@ -66,6 +66,10 @@ def resolve_backend_name(
     the optional dependency is installed) > ``openai_agents``.
     """
     name = explicit or os.getenv(_ENV_VAR)
+    # lgtm[py/incomplete-url-substring-sanitization]
+    # Endpoint is trusted operator config (YAML `endpoint:` / CAPI env),
+    # not attacker-controlled input; this is a startup dispatch hint,
+    # not a security boundary.
     if not name and endpoint and "api.githubcopilot.com" in endpoint:
         with contextlib.suppress(ImportError):
             __import__("copilot")

@@ -78,7 +78,6 @@ class AgentBackend(Protocol):
 
     def validate(self, spec: AgentSpec) -> None:
         """Reject any spec field the backend cannot honour."""
-        ...
 
     async def build(
         self,
@@ -88,7 +87,6 @@ class AgentBackend(Protocol):
         agent_hooks: Any = None,
     ) -> Any:
         """Construct a backend-native agent from a neutral spec."""
-        ...
 
     def run_streamed(
         self,
@@ -98,8 +96,6 @@ class AgentBackend(Protocol):
         max_turns: int,
     ) -> AsyncIterator[StreamEvent]:
         """Run the agent against *prompt*, yielding neutral stream events."""
-        ...
 
     async def aclose(self, agent: Any) -> None:
         """Release any resources held by *agent*."""
-        ...
