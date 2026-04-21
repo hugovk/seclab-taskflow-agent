@@ -15,7 +15,7 @@ backend-event translation are independently readable and testable.
 
 from __future__ import annotations
 
-__all__ = ["bridge_copilot_tool_event", "drive_backend_stream"]
+__all__ = ["STREAM_IDLE_TIMEOUT", "bridge_copilot_tool_event", "drive_backend_stream"]
 
 import asyncio
 import json
@@ -23,9 +23,17 @@ import logging
 from types import SimpleNamespace
 from typing import Any
 
+from ._watchdog import watchdog_ping
 from .render_utils import render_model_output
 from .sdk import TextDelta, ToolEnd
 from .sdk.errors import BackendRateLimitError, BackendTimeoutError
+
+# Application-level backstop: if the backend's event stream goes silent
+# for this long, surface a BackendTimeoutError so the retry loop can
+# recover. This complements the TCP-level httpx timeouts in the
+# openai-agents adapter — those catch dead sockets, this catches the
+# subtler case where the connection stays open but nothing is flowing.
+STREAM_IDLE_TIMEOUT = 1800
 
 
 async def bridge_copilot_tool_event(event: ToolEnd, run_hooks: Any) -> None:
@@ -79,15 +87,39 @@ async def drive_backend_stream(
 
     while rate_limit_backoff:
         try:
-            async for event in backend_impl.run_streamed(
+            stream = backend_impl.run_streamed(
                 agent_handle, prompt, max_turns=max_turns
-            ):
-                if isinstance(event, TextDelta):
-                    await render_model_output(
-                        event.text, async_task=async_task, task_id=task_id
-                    )
-                elif isinstance(event, ToolEnd):
-                    await bridge_copilot_tool_event(event, run_hooks)
+            )
+            stream_iter = stream.__aiter__()
+            try:
+                while True:
+                    try:
+                        event = await asyncio.wait_for(
+                            stream_iter.__anext__(), timeout=STREAM_IDLE_TIMEOUT
+                        )
+                    except StopAsyncIteration:
+                        break
+                    except asyncio.TimeoutError as exc:
+                        raise BackendTimeoutError(
+                            f"Backend stream idle for {STREAM_IDLE_TIMEOUT}s"
+                        ) from exc
+                    watchdog_ping()
+                    if isinstance(event, TextDelta):
+                        await render_model_output(
+                            event.text, async_task=async_task, task_id=task_id
+                        )
+                    elif isinstance(event, ToolEnd):
+                        await bridge_copilot_tool_event(event, run_hooks)
+            finally:
+                # Close the async generator so its finally block runs even
+                # if we abort early (timeout / consumer break) — the
+                # adapters use that to release backend-native resources.
+                aclose = getattr(stream_iter, "aclose", None)
+                if aclose is not None:
+                    try:
+                        await aclose()
+                    except Exception:  # noqa: BLE001 - best-effort cleanup
+                        logging.exception("Failed to aclose backend stream iterator")
             await render_model_output("\n\n", async_task=async_task, task_id=task_id)
             return
         except BackendTimeoutError:

@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 import jinja2
 
 from ._stream import drive_backend_stream
+from ._watchdog import start_watchdog, watchdog_ping
 from .agent import DEFAULT_MODEL, TaskAgentHooks, TaskRunHooks
 from .available_tools import AvailableTools
 from .env_utils import TmpEnv
@@ -445,6 +446,7 @@ async def deploy_task_agents(
         return complete
 
     finally:
+        watchdog_ping()
         if agent_handle is not None:
             try:
                 await backend_impl.aclose(agent_handle)
@@ -460,6 +462,23 @@ async def deploy_task_agents(
                 continue
             except Exception:
                 logging.exception("Exception in mcp server cleanup task")
+        # If the MCP session task is still running (e.g. all servers were
+        # already disconnected and the cleanup loop above never entered)
+        # cancel it explicitly so a dangling task can't keep the event
+        # loop alive past run_main.
+        if not mcp_sessions.done():
+            mcp_sessions.cancel()
+            try:
+                await asyncio.wait_for(mcp_sessions, timeout=MCP_CLEANUP_TIMEOUT)
+            except asyncio.TimeoutError:
+                logging.warning(
+                    "Timed out waiting for MCP session task cancellation after %ds",
+                    MCP_CLEANUP_TIMEOUT,
+                )
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logging.exception("Exception while cancelling MCP session task")
 
 
 async def run_main(
@@ -482,12 +501,19 @@ async def run_main(
     """
     from .session import TaskflowSession
 
+    # Daemon thread that force-exits the process if the event loop stops
+    # making progress for any reason the asyncio-layer timeouts didn't
+    # already handle. Idempotent — safe to call on every run_main.
+    start_watchdog()
+
     last_mcp_tool_results: list[str] = []
 
     async def on_tool_end_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool, result: str) -> None:
+        watchdog_ping()
         last_mcp_tool_results.append(result)
 
     async def on_tool_start_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], tool: Tool) -> None:
+        watchdog_ping()
         await render_model_output(f"\n** 🤖🛠️ Tool Call: {tool.name}\n")
 
     async def on_handoff_hook(context: RunContextWrapper[TContext], agent: Agent[TContext], source: Agent[TContext]) -> None:

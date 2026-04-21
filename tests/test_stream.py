@@ -140,3 +140,57 @@ def test_drive_caps_rate_limit_backoff(monkeypatch):
 
 async def _noop() -> None:
     return None
+
+
+class _HangingBackend:
+    """A backend whose stream yields once then blocks forever — used to
+    exercise the idle-timeout path of drive_backend_stream.
+    """
+
+    async def run_streamed(self, _agent: Any, _prompt: str, *, max_turns: int) -> Any:
+        del max_turns
+        yield TextDelta(text="first")
+        await asyncio.Event().wait()  # hang
+
+
+def test_drive_raises_on_stream_idle_timeout(monkeypatch):
+    monkeypatch.setattr(
+        "seclab_taskflow_agent._stream.render_model_output",
+        lambda *a, **kw: _noop(),
+    )
+    # Force a tiny idle timeout so the test runs quickly.
+    monkeypatch.setattr("seclab_taskflow_agent._stream.STREAM_IDLE_TIMEOUT", 0.05)
+
+    backend = _HangingBackend()
+    with pytest.raises(BackendTimeoutError, match="idle"):
+        asyncio.run(
+            drive_backend_stream(
+                backend_impl=backend,
+                agent_handle=None,
+                prompt="p",
+                max_turns=1,
+                run_hooks=None,
+                async_task=False,
+                task_id="t",
+                max_api_retry=0,
+                initial_rate_limit_backoff=1,
+                max_rate_limit_backoff=4,
+            )
+        )
+
+
+def test_drive_pings_watchdog_per_event(monkeypatch):
+    monkeypatch.setattr(
+        "seclab_taskflow_agent._stream.render_model_output",
+        lambda *a, **kw: _noop(),
+    )
+    pings: list[int] = []
+    monkeypatch.setattr(
+        "seclab_taskflow_agent._stream.watchdog_ping",
+        lambda: pings.append(1),
+    )
+    backend = _ScriptedBackend(
+        [[TextDelta(text="a"), TextDelta(text="b"), ToolEnd(tool_name="t", text="x")]]
+    )
+    _drive(backend, _RecordingHooks())
+    assert len(pings) == 3
