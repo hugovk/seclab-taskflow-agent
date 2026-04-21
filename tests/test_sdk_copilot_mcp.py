@@ -5,6 +5,10 @@
 
 from __future__ import annotations
 
+import sys
+
+import pytest
+
 from seclab_taskflow_agent.sdk.base import MCPServerSpec
 from seclab_taskflow_agent.sdk.copilot_sdk.mcp import build_mcp_config
 
@@ -92,6 +96,8 @@ def test_stdio_minimal_defaults():
 
 
 def test_stdio_resolves_bare_command_via_path(tmp_path, monkeypatch):
+    if sys.platform == "win32":
+        pytest.skip("PATHEXT-based shutil.which lookup is POSIX-specific in this test")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "fakecmd"
