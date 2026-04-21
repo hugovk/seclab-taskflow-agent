@@ -102,13 +102,22 @@ class OpenAIAgentsBackend:
         *,
         max_turns: int,
     ) -> AsyncIterator[StreamEvent]:
+        result = None
         try:
             result = agent.run_streamed(prompt, max_turns=max_turns)
-            async for event in result.stream_events():
-                if event.type == "raw_response_event" and isinstance(
-                    event.data, ResponseTextDeltaEvent
-                ):
-                    yield TextDelta(text=event.data.delta)
+            try:
+                async for event in result.stream_events():
+                    if event.type == "raw_response_event" and isinstance(
+                        event.data, ResponseTextDeltaEvent
+                    ):
+                        yield TextDelta(text=event.data.delta)
+            finally:
+                # aclose() on stream_events() throws GeneratorExit which
+                # skips RunResultStreaming._cleanup_tasks(), so cancel
+                # explicitly to keep _run_impl_task from leaking when
+                # the consumer aborts the iterator (e.g. on idle timeout).
+                if result is not None:
+                    result.cancel()
         except MaxTurnsExceeded as exc:
             raise BackendMaxTurnsError(str(exc)) from exc
         except RateLimitError as exc:
@@ -121,6 +130,10 @@ class OpenAIAgentsBackend:
             raise BackendUnexpectedError(str(exc)) from exc
 
     async def aclose(self, agent: Any) -> None:
-        # MCP cleanup is owned by the runner; openai-agents agents do
-        # not hold their own resources.
-        del agent
+        # MCP cleanup is owned by the runner; we only need to release
+        # the per-agent AsyncOpenAI client so its httpx pool returns
+        # any half-open sockets to the OS.
+        if agent is not None:
+            close = getattr(agent, "close", None)
+            if close is not None:
+                await close()

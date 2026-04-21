@@ -207,37 +207,48 @@ class CopilotSDKBackend:
 
         await agent.session.send(prompt)
 
-        while True:
-            event = await agent.event_queue.get()
-            etype = getattr(event, "type", None)
-            data = getattr(event, "data", None)
+        aborted = False
+        try:
+            while True:
+                event = await agent.event_queue.get()
+                etype = getattr(event, "type", None)
+                data = getattr(event, "data", None)
 
-            if etype == SessionEventType.ASSISTANT_MESSAGE_DELTA:
-                text = getattr(data, "delta_content", None) or ""
-                if text:
-                    yield TextDelta(text=text)
-            elif etype == SessionEventType.TOOL_EXECUTION_COMPLETE:
-                if getattr(data, "success", False):
-                    text = _tool_result_text(data)
-                    if text is not None:
-                        yield ToolEnd(
-                            tool_name=getattr(data, "tool_name", "") or "",
-                            text=text,
-                        )
-                    # exclude_from_context parity with openai-agents'
-                    # ToolsToFinalOutputFunction: stop the session after
-                    # the first successful tool call so the model never
-                    # sees the result fed back into its context.
-                    if agent.exclude_from_context:
-                        with contextlib.suppress(Exception):
-                            await agent.session.abort()
-                        return
-            elif etype == SessionEventType.SESSION_ERROR:
-                raise BackendUnexpectedError(
-                    getattr(data, "message", None) or "copilot_sdk session error"
-                )
-            elif etype == SessionEventType.SESSION_IDLE:
-                return
+                if etype == SessionEventType.ASSISTANT_MESSAGE_DELTA:
+                    text = getattr(data, "delta_content", None) or ""
+                    if text:
+                        yield TextDelta(text=text)
+                elif etype == SessionEventType.TOOL_EXECUTION_COMPLETE:
+                    if getattr(data, "success", False):
+                        text = _tool_result_text(data)
+                        if text is not None:
+                            yield ToolEnd(
+                                tool_name=getattr(data, "tool_name", "") or "",
+                                text=text,
+                            )
+                        # exclude_from_context parity with openai-agents'
+                        # ToolsToFinalOutputFunction: stop the session after
+                        # the first successful tool call so the model never
+                        # sees the result fed back into its context.
+                        if agent.exclude_from_context:
+                            with contextlib.suppress(Exception):
+                                await agent.session.abort()
+                            aborted = True
+                            return
+                elif etype == SessionEventType.SESSION_ERROR:
+                    raise BackendUnexpectedError(
+                        getattr(data, "message", None) or "copilot_sdk session error"
+                    )
+                elif etype == SessionEventType.SESSION_IDLE:
+                    return
+        finally:
+            # If the consumer abandoned the iterator (idle-timeout, error,
+            # caller break) the session may still be mid-turn. Abort so the
+            # background event task drains and aclose() can run cleanly.
+            # Skipped when we already aborted above for exclude_from_context.
+            if not aborted:
+                with contextlib.suppress(Exception):
+                    await agent.session.abort()
 
     async def aclose(self, agent: _CopilotHandle | None) -> None:
         if agent is None:

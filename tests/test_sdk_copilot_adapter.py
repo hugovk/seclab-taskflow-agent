@@ -197,6 +197,45 @@ def test_run_streamed_keeps_running_when_exclude_disabled():
     assert [type(e).__name__ for e in out] == ["ToolEnd", "TextDelta"]
 
 
+def test_run_streamed_aborts_session_on_consumer_break():
+    """If the consumer abandons the iterator mid-turn, the adapter must
+    still call session.abort() so the SDK background task can drain.
+    """
+    aborted: list[bool] = []
+
+    class _AbortableSession(_FakeSession):
+        async def abort(self) -> None:
+            aborted.append(True)
+
+    async def _run():
+        queue: asyncio.Queue[Any] = asyncio.Queue()
+        for ev in (
+            _Event(
+                SessionEventType.ASSISTANT_MESSAGE_DELTA,
+                SimpleNamespace(delta_content="hello"),
+            ),
+            _Event(
+                SessionEventType.ASSISTANT_MESSAGE_DELTA,
+                SimpleNamespace(delta_content="world"),
+            ),
+            _Event(SessionEventType.SESSION_IDLE),
+        ):
+            queue.put_nowait(ev)
+        handle = SimpleNamespace(
+            client=None,
+            session=_AbortableSession(),
+            event_queue=queue,
+            exclude_from_context=False,
+        )
+        # Take only the first event then break — exercises the finally
+        # path of the async generator.
+        async for _ev in CopilotSDKBackend().run_streamed(handle, "go", max_turns=10):
+            break
+
+    asyncio.run(_run())
+    assert aborted == [True]
+
+
 def test_invalid_reasoning_effort_rejected():
     with pytest.raises(BackendBadRequestError, match="reasoning_effort"):
         _reasoning_effort({"reasoning_effort": "ludicrous"})

@@ -72,6 +72,7 @@ class _FakeOtherEvent:
 class _FakeStreamedResult:
     def __init__(self, events):
         self._events = events
+        self.cancel_called = False
 
     def stream_events(self):
         events = self._events
@@ -81,6 +82,9 @@ class _FakeStreamedResult:
                 yield ev
 
         return iter_events()
+
+    def cancel(self) -> None:
+        self.cancel_called = True
 
 
 class _FakeAgent:
@@ -180,8 +184,42 @@ def test_run_streamed_translates_agents_exception():
         )
 
 
-def test_aclose_is_noop(backend):
+def test_run_streamed_cancels_underlying_result(monkeypatch, backend):
+    from seclab_taskflow_agent.sdk.openai_agents import backend as backend_mod
+
+    monkeypatch.setattr(backend_mod, "ResponseTextDeltaEvent", _FakeDelta)
+    agent = _FakeAgent([_FakeRawTextEvent("x")])
+    _collect(backend.run_streamed(agent, "p", max_turns=1))
+    # The adapter must call cancel() on the RunResultStreaming so the
+    # background _run_impl_task does not leak after the stream drains.
+    # We capture the most recently returned _FakeStreamedResult by
+    # patching _FakeAgent.run_streamed via a wrapper.
+    captured: list[_FakeStreamedResult] = []
+
+    class _CapturingAgent(_FakeAgent):
+        def run_streamed(self, prompt: str, *, max_turns: int):  # noqa: ARG002
+            res = _FakeStreamedResult([_FakeRawTextEvent("y")])
+            captured.append(res)
+            return res
+
+    _collect(backend.run_streamed(_CapturingAgent(), "p", max_turns=1))
+    assert captured and captured[0].cancel_called is True
+
+
+def test_aclose_closes_taskagent_client(backend):
+    closed: list[bool] = []
+
+    class _FakeTaskAgent:
+        async def close(self) -> None:
+            closed.append(True)
+
+    asyncio.run(backend.aclose(_FakeTaskAgent()))
+    assert closed == [True]
+
+
+def test_aclose_tolerates_objects_without_close(backend):
     asyncio.run(backend.aclose(object()))
+    asyncio.run(backend.aclose(None))
 
 
 def test_build_constructs_taskagent(monkeypatch, backend):
