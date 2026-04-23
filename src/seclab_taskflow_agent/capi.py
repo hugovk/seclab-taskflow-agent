@@ -140,12 +140,34 @@ _PROVIDERS: dict[str, APIProvider] = {
 }
 
 def get_provider(endpoint: str | None = None) -> APIProvider:
-    """Return the ``APIProvider`` for the given (or configured) endpoint URL."""
+    """Return the ``APIProvider`` for the given (or configured) endpoint URL.
+
+    When running inside an AWF (Agentic Workflow Firewall) sandbox, the
+    ``AWF_COPILOT_PROXY`` env var names the upstream provider whose behaviour
+    (headers, model defaults, catalog format) the local proxy mirrors.
+    The proxy URL is used as ``base_url`` while all other provider traits
+    come from the named upstream.
+    """
     url = endpoint or get_AI_endpoint()
     netloc = urlparse(url).netloc
     provider = _PROVIDERS.get(netloc)
     if provider is not None:
         return provider
+
+    # AWF proxy support: AWF_COPILOT_PROXY names the upstream provider
+    # (e.g. "api.githubcopilot.com") whose behaviour this proxy mirrors.
+    awf_upstream = os.getenv("AWF_COPILOT_PROXY")
+    if awf_upstream:
+        upstream = _PROVIDERS.get(awf_upstream)
+        if upstream:
+            return type(upstream)(
+                name=upstream.name,
+                base_url=url,
+                models_catalog=upstream.models_catalog,
+                default_model=upstream.default_model,
+                extra_headers=dict(upstream.extra_headers),
+            )
+
     # Unknown endpoint — return a generic provider with the given base URL
     return APIProvider(name="custom", base_url=url, default_model="please-set-default-model-via-env")
 
