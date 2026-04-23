@@ -11,6 +11,7 @@ registry entry instead of changes scattered across multiple match/case blocks.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -147,6 +148,10 @@ def get_provider(endpoint: str | None = None) -> APIProvider:
     (headers, model defaults, catalog format) the local proxy mirrors.
     The proxy URL is used as ``base_url`` while all other provider traits
     come from the named upstream.
+
+    ``AWF_COPILOT_PROXY`` accepts either a bare hostname
+    (``api.githubcopilot.com``) or a full URL
+    (``https://api.githubcopilot.com``).
     """
     url = endpoint or get_AI_endpoint()
     netloc = urlparse(url).netloc
@@ -156,17 +161,14 @@ def get_provider(endpoint: str | None = None) -> APIProvider:
 
     # AWF proxy support: AWF_COPILOT_PROXY names the upstream provider
     # (e.g. "api.githubcopilot.com") whose behaviour this proxy mirrors.
-    awf_upstream = os.getenv("AWF_COPILOT_PROXY")
+    awf_upstream = os.getenv("AWF_COPILOT_PROXY", "").strip()
     if awf_upstream:
-        upstream = _PROVIDERS.get(awf_upstream)
+        # Normalize: accept both bare hostnames and full URLs.
+        parsed = urlparse(awf_upstream)
+        key = parsed.netloc or parsed.path
+        upstream = _PROVIDERS.get(key)
         if upstream:
-            return type(upstream)(
-                name=upstream.name,
-                base_url=url,
-                models_catalog=upstream.models_catalog,
-                default_model=upstream.default_model,
-                extra_headers=dict(upstream.extra_headers),
-            )
+            return dataclasses.replace(upstream, base_url=url)
 
     # Unknown endpoint — return a generic provider with the given base URL
     return APIProvider(name="custom", base_url=url, default_model="please-set-default-model-via-env")
